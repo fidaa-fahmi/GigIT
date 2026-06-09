@@ -1,8 +1,7 @@
-import { AppView, Gig } from '../types';
-import { initialGigs, initialBackupWorkers } from '../data';
-import React, { useEffect, useState } from 'react';
-import { api } from '../services/api';
-import { Gig } from '../types';
+import { useState, useMemo, useEffect } from 'react';
+import { AppView, Gig } from '../types'; //
+import { api } from '../services/api';     // Connects to your Supabase API helper
+import { initialBackupWorkers } from '../data'; //
 import { 
   Bell, 
   User, 
@@ -30,37 +29,56 @@ import {
   MessageSquare,
   HelpCircle,
   FileText
-} from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
-import WorkerReliabilityView from './WorkerReliabilityView';
+} from 'lucide-react'; //
+import { motion, AnimatePresence } from 'motion/react'; //
+import WorkerReliabilityView from './WorkerReliabilityView'; //
 
 interface WorkerBrowseViewProps {
   onNavigate: (view: AppView) => void;
-  gigs: Gig[];
   initialTab?: string;
 }
 
-export default function WorkerBrowseView({ onNavigate, gigs, initialTab }: WorkerBrowseViewProps) {
-  const [selectedCategory, setSelectedCategory] = useState<string>('All Types');
-  const [activeTab, setActiveTab] = useState<string>(initialTab || 'Dashboard');
-  const [userGigs, setUserGigs] = useState<Record<string, 'Applied' | 'Booked'>>({});
-  const [showMapOnMobile, setShowMapOnMobile] = useState<boolean>(false);
+export default function WorkerBrowseView({ onNavigate, initialTab }: WorkerBrowseViewProps) {
+  // 1. PLACE LIVE STATE AND SUPABASE CONNECTION HERE
+  const [gigs, setGigs] = useState<Gig[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  
+  const [selectedCategory, setSelectedCategory] = useState<string>('All Types'); //
+  const [activeTab, setActiveTab] = useState<string>(initialTab || 'Dashboard'); //
+  const [userGigs, setUserGigs] = useState<Record<string, 'Applied' | 'Booked'>>({}); //
+  const [showMapOnMobile, setShowMapOnMobile] = useState<boolean>(false); //
   
   // Clock in status
-  const [clockInState, setClockInState] = useState<'idle' | 'clocked-in' | 'clocked-out'>('idle');
-  const [clockInTime, setClockInTime] = useState<string | null>(null);
+  const [clockInState, setClockInState] = useState<'idle' | 'clocked-in' | 'clocked-out'>('idle'); //
+  const [clockInTime, setClockInTime] = useState<string | null>(null); //
 
   // Success toast notification
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null); //
 
-  // Filter chips
+  // 2. FETCH DATA FROM SUPABASE ON COMPONENT MOUNT
+  useEffect(() => {
+    async function loadGigs() {
+      try {
+        setLoading(true);
+        const data = await api.getGigs();
+        setGigs(data);
+      } catch (err) {
+        console.error("Error loading gigs from Supabase backend:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadGigs();
+  }, []);
+
+  // Filter chips (Dynamically calculates count based on live state data)
   const categories = [
     { name: 'All Types', count: gigs.length },
     { name: 'Event', count: gigs.filter(g => g.category === 'Event').length },
     { name: 'F&B', count: gigs.filter(g => g.category === 'F&B').length },
     { name: 'Logistics', count: gigs.filter(g => g.category === 'Logistics').length },
     { name: '< 3km Away', count: gigs.filter(g => parseFloat(g.distance) < 3.0).length }
-  ];
+  ]; //
 
   // Filtering calculation logic
   const filteredGigs = useMemo(() => {
@@ -69,7 +87,7 @@ export default function WorkerBrowseView({ onNavigate, gigs, initialTab }: Worke
       return gigs.filter(g => parseFloat(g.distance.replace('km away', '').trim()) < 3.0);
     }
     return gigs.filter(g => g.category === selectedCategory);
-  }, [selectedCategory, gigs]);
+  }, [selectedCategory, gigs]); //
 
   const handleApply = (id: string, title: string, isInstant: boolean) => {
     setUserGigs(prev => ({
@@ -80,7 +98,7 @@ export default function WorkerBrowseView({ onNavigate, gigs, initialTab }: Worke
     const actionText = isInstant ? 'booked instantly!' : 'application submitted!';
     setToastMessage(`Success! "${title}" is ${actionText}`);
     setTimeout(() => setToastMessage(null), 4000);
-  };
+  }; //
 
   const handleClockIn = () => {
     if (clockInState === 'idle') {
@@ -93,8 +111,19 @@ export default function WorkerBrowseView({ onNavigate, gigs, initialTab }: Worke
       setToastMessage(`Successful Clock-Out! Your hours have been updated for Direct Pay. 💸`);
     }
     setTimeout(() => setToastMessage(null), 4500);
-  };
+  }; //
 
+  // 3. SHOW LOADING UI WHILE WAITING FOR SUPABASE DATA
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-background">
+        <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4"></div>
+        <p className="text-sm font-semibold text-primary animate-pulse">Loading live active gigs...</p>
+      </div>
+    );
+  }
+
+  // 4. RENDER ACTUAL COMPONENT LAYOUT
   return (
     <div className="bg-background min-h-screen text-on-surface font-sans selection:bg-primary-container selection:text-on-primary-container">
       {/* Top Header Bar */}
@@ -104,7 +133,6 @@ export default function WorkerBrowseView({ onNavigate, gigs, initialTab }: Worke
           <span className="font-display font-bold text-xl text-primary tracking-tight">GigIT</span>
         </div>
         
-        {/* Navigation links centered on desktop */}
         <div className="hidden lg:flex items-center gap-6">
           <button onClick={() => onNavigate(AppView.Landing)} className="text-on-surface-variant hover:text-primary transition-colors text-sm font-semibold tracking-wide cursor-pointer">Kota / Home</button>
           <button onClick={() => onNavigate(AppView.WorkerBrowse)} className="text-primary font-bold border-b-2 border-primary py-1 text-sm tracking-wide cursor-pointer">Find Gigs</button>
@@ -150,7 +178,6 @@ export default function WorkerBrowseView({ onNavigate, gigs, initialTab }: Worke
               </div>
             </div>
 
-            {/* Reliability score highlights */}
             <div className="bg-secondary/5 p-4 rounded-xl border border-secondary/20">
               <div className="flex justify-between items-center mb-1.5">
                 <span className="text-[11px] text-secondary font-bold uppercase tracking-wider">Reliability Score</span>
@@ -170,57 +197,24 @@ export default function WorkerBrowseView({ onNavigate, gigs, initialTab }: Worke
           </div>
 
           <nav className="flex-1 space-y-1">
-            <a 
-              href="#" 
-              onClick={(e) => { e.preventDefault(); setActiveTab('Dashboard'); }} 
-              className={`flex items-center gap-3 px-6 py-3.5 mx-2 rounded-xl text-sm ${
-                activeTab === 'Dashboard' 
-                  ? 'bg-primary text-white font-bold shadow-xs' 
-                  : 'text-on-surface-variant hover:bg-surface-container-low transition-all'
-              }`}
-            >
+            <a href="#" onClick={(e) => { e.preventDefault(); setActiveTab('Dashboard'); }} className={`flex items-center gap-3 px-6 py-3.5 mx-2 rounded-xl text-sm ${activeTab === 'Dashboard' ? 'bg-primary text-white font-bold shadow-xs' : 'text-on-surface-variant hover:bg-surface-container-low transition-all'}`}>
               <span className="material-symbols-outlined text-lg">dashboard</span>
               <span>Dashboard</span>
             </a>
-            <a 
-              href="#" 
-              onClick={(e) => { e.preventDefault(); setActiveTab('Reliability'); }} 
-              className={`flex items-center gap-3 px-6 py-3.5 mx-2 rounded-xl text-sm ${
-                activeTab === 'Reliability' 
-                  ? 'bg-primary text-white font-bold shadow-xs' 
-                  : 'text-on-surface-variant hover:bg-surface-container-low transition-all'
-              }`}
-            >
+            <a href="#" onClick={(e) => { e.preventDefault(); setActiveTab('Reliability'); }} className={`flex items-center gap-3 px-6 py-3.5 mx-2 rounded-xl text-sm ${activeTab === 'Reliability' ? 'bg-primary text-white font-bold shadow-xs' : 'text-on-surface-variant hover:bg-surface-container-low transition-all'}`}>
               <span className="material-symbols-outlined text-lg">verified_user</span>
               <span>My Reliability</span>
             </a>
-            <a 
-              href="#" 
-              onClick={(e) => { e.preventDefault(); setActiveTab('Earnings'); }} 
-              className={`flex items-center gap-3 px-6 py-3.5 mx-2 rounded-xl text-sm ${
-                activeTab === 'Earnings' 
-                  ? 'bg-primary text-white font-bold shadow-xs' 
-                  : 'text-on-surface-variant hover:bg-surface-container-low transition-all'
-              }`}
-            >
+            <a href="#" onClick={(e) => { e.preventDefault(); setActiveTab('Earnings'); }} className={`flex items-center gap-3 px-6 py-3.5 mx-2 rounded-xl text-sm ${activeTab === 'Earnings' ? 'bg-primary text-white font-bold shadow-xs' : 'text-on-surface-variant hover:bg-surface-container-low transition-all'}`}>
               <span className="material-symbols-outlined text-lg">payments</span>
               <span>Earnings</span>
             </a>
-            <a 
-              href="#" 
-              onClick={(e) => { e.preventDefault(); setActiveTab('Support'); }} 
-              className={`flex items-center gap-3 px-6 py-3.5 mx-2 rounded-xl text-sm ${
-                activeTab === 'Support' 
-                  ? 'bg-primary text-white font-bold shadow-xs' 
-                  : 'text-on-surface-variant hover:bg-surface-container-low transition-all'
-              }`}
-            >
+            <a href="#" onClick={(e) => { e.preventDefault(); setActiveTab('Support'); }} className={`flex items-center gap-3 px-6 py-3.5 mx-2 rounded-xl text-sm ${activeTab === 'Support' ? 'bg-primary text-white font-bold shadow-xs' : 'text-on-surface-variant hover:bg-surface-container-low transition-all'}`}>
               <span className="material-symbols-outlined text-lg">support_agent</span>
               <span>Support</span>
             </a>
           </nav>
 
-          {/* Clock In Widget */}
           <div className="px-6 mt-auto pb-4">
             <div className="bg-surface-container p-4 rounded-xl mb-4 border border-outline-variant/60">
               <p className="text-xs font-bold text-on-surface mb-1 flex items-center gap-1.5 uppercase tracking-wide">
@@ -231,19 +225,13 @@ export default function WorkerBrowseView({ onNavigate, gigs, initialTab }: Worke
               <p className="text-xs font-bold text-primary mb-3">Event Helper @ UMS</p>
               
               {clockInState === 'idle' && (
-                <button 
-                  onClick={handleClockIn}
-                  className="w-full bg-primary hover:bg-primary/95 text-white py-2 rounded-lg text-xs font-bold active:scale-95 transition-all flex items-center justify-center gap-1 cursor-pointer"
-                >
+                <button onClick={handleClockIn} className="w-full bg-primary hover:bg-primary/95 text-white py-2 rounded-lg text-xs font-bold active:scale-95 transition-all flex items-center justify-center gap-1 cursor-pointer">
                   <Play size={10} fill="currentColor" />
                   <span>Clock In</span>
                 </button>
               )}
               {clockInState === 'clocked-in' && (
-                <button 
-                  onClick={handleClockIn}
-                  className="w-full bg-red-600 hover:bg-red-700 text-white py-2 rounded-lg text-xs font-bold active:scale-95 transition-all text-center cursor-pointer shadow-sm animate-pulse-slow"
-                >
+                <button onClick={handleClockIn} className="w-full bg-red-600 hover:bg-red-700 text-white py-2 rounded-lg text-xs font-bold active:scale-95 transition-all text-center cursor-pointer shadow-sm animate-pulse-slow">
                   Clock Out (Active {clockInTime})
                 </button>
               )}
@@ -270,8 +258,6 @@ export default function WorkerBrowseView({ onNavigate, gigs, initialTab }: Worke
 
         {/* Right side Main Content Scroll view */}
         <main className="flex-1 md:ml-64 pb-28 md:pb-12 min-h-screen">
-          
-          {/* Global toast notification system */}
           <div className="max-w-7xl mx-auto px-4 md:px-8 relative z-50">
             <AnimatePresence>
               {toastMessage && (
@@ -293,28 +279,18 @@ export default function WorkerBrowseView({ onNavigate, gigs, initialTab }: Worke
             </AnimatePresence>
           </div>
 
-          {/* ACTIVE TAB: Dashboard (Gig Map and Listings) */}
           {activeTab === 'Dashboard' && (
             <>
               {/* Visual Map Banner */}
               <div 
-                className={`relative w-full overflow-hidden border-b border-outline-variant shadow-xs transition-all ${
-                  showMapOnMobile 
-                    ? 'h-[calc(100vh-140px)] block' 
-                    : 'hidden md:block md:h-[350px]'
-                }`}
+                className={`relative w-full overflow-hidden border-b border-outline-variant shadow-xs transition-all ${showMapOnMobile ? 'h-[calc(100vh-140px)] block' : 'hidden md:block md:h-[350px]'}`}
                 id="gigs-interactive-leaflet-map"
               >
                 <div className="absolute inset-0 bg-surface-container-highest">
-                  <img 
-                    alt="Map of Kota Kinabalu showing gig locations" 
-                    className="w-full h-full object-cover opacity-75"
-                    src="https://lh3.googleusercontent.com/aida-public/AB6AXuBzIs7EISazqOpSKFg2aAUlsTf9_hmYaH1tPpDOcK0yM129A_sT8opGYYi44L8G4E-4avwAfykwpwi_NAW0cVVllVW6hEZjQCZld4saiVqDjIl1cztKNEojAiETF0ooBcJFp-Ty6f8fQvx4Fc0YhcbKimW2OOqr0tvFfBYnIzA1mQT_11xGk2KrgiACnTbaX6-2fm3SHqYx9FR4yuJy3_rsjv4H57OE3V1s2uI0nb31oIGPvs0QXUZE0gQ9BPEPuyWQSEKm9_RV-fI" 
-                  />
+                  <img alt="Map of Kota Kinabalu showing gig locations" className="w-full h-full object-cover opacity-75" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBzIs7EISazqOpSKFg2aAUlsTf9_hmYaH1tPpDOcK0yM129A_sT8opGYYi44L8G4E-4avwAfykwpwi_NAW0cVVllVW6hEZjQCZld4saiVqDjIl1cztKNEojAiETF0ooBcJFp-Ty6f8fQvx4Fc0YhcbKimW2OOqr0tvFfBYnIzA1mQT_11xGk2KrgiACnTbaX6-2fm3SHqYx9FR4yuJy3_rsjv4H57OE3V1s2uI0nb31oIGPvs0QXUZE0gQ9BPEPuyWQSEKm9_RV-fI" />
                   <div className="absolute inset-0 map-gradient"></div>
                 </div>
 
-                {/* Simulated Live Marker Pins */}
                 {gigs.map((g) => (
                   <div 
                     key={g.id} 
@@ -328,7 +304,6 @@ export default function WorkerBrowseView({ onNavigate, gigs, initialTab }: Worke
                   </div>
                 ))}
 
-                {/* Visual map Overlay info titles - on mobile we can make it smaller */}
                 <div className="absolute inset-x-0 bottom-0 p-4 md:p-8 flex flex-col justify-end bg-gradient-to-t from-background via-background/40 to-transparent">
                   <div className="max-w-7xl mx-auto w-full flex flex-wrap items-end justify-between gap-4">
                     <div className="space-y-1">
@@ -351,7 +326,6 @@ export default function WorkerBrowseView({ onNavigate, gigs, initialTab }: Worke
               </div>
 
               <div className="max-w-7xl mx-auto px-4 md:px-8 mt-6">
-                {/* Toggle components container */}
                 <div className={showMapOnMobile ? 'hidden md:block' : 'block'}>
                   
                   {/* Category Filter Cards */}
@@ -361,11 +335,7 @@ export default function WorkerBrowseView({ onNavigate, gigs, initialTab }: Worke
                         <button 
                           key={cat.name}
                           onClick={() => setSelectedCategory(cat.name)}
-                          className={`px-4.5 py-1.5 rounded-full text-xs font-medium border cursor-pointer transition-colors ${
-                            selectedCategory === cat.name 
-                              ? 'bg-primary text-white border-primary font-semibold' 
-                              : 'bg-white border-outline-variant/60 text-on-surface-variant hover:bg-surface-container-low'
-                          }`}
+                          className={`px-4.5 py-1.5 rounded-full text-xs font-medium border cursor-pointer transition-colors ${selectedCategory === cat.name ? 'bg-primary text-white border-primary font-semibold' : 'bg-white border-outline-variant/60 text-on-surface-variant hover:bg-surface-container-low'}`}
                         >
                           {cat.name} {cat.count > 0 && `(${cat.count})`}
                         </button>
@@ -376,22 +346,15 @@ export default function WorkerBrowseView({ onNavigate, gigs, initialTab }: Worke
                   {/* Gig list cards grid representation */}
                   <section className="mt-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {filteredGigs.map((g) => {
-                      const isFeatured = g.id === 'gig-1';
+                      const isFeatured = g.category === 'Event'; // Dynamically highlight based on layout rules
                       const status = userGigs[g.id];
 
                       if (isFeatured) {
                         return (
-                          <div 
-                            key={g.id} 
-                            className="md:col-span-2 group relative overflow-hidden rounded-2xl bg-white border border-outline-variant hover:shadow-lg transition-all duration-300"
-                          >
+                          <div key={g.id} className="md:col-span-2 group relative overflow-hidden rounded-2xl bg-white border border-outline-variant hover:shadow-lg transition-all duration-300">
                             <div className="grid grid-cols-1 md:grid-cols-12 h-full">
                               <div className="md:col-span-5 h-48 md:h-full relative overflow-hidden bg-surface">
-                                <img 
-                                  className="w-full h-full object-cover group-hover:scale-103 transition-transform duration-500" 
-                                  src={g.imageUrl} 
-                                  alt={g.title} 
-                                />
+                                <img className="w-full h-full object-cover group-hover:scale-103 transition-transform duration-500" src={g.imageUrl || 'https://via.placeholder.com/150'} alt={g.title} />
                                 <div className="absolute top-3.5 left-3.5 bg-tertiary-container/90 text-white text-[9px] font-bold px-3 py-1 rounded-full flex items-center gap-1 backdrop-blur-xs">
                                   <Zap size={10} fill="currentColor" />
                                   <span>INSTANT BOOKING</span>
@@ -405,9 +368,7 @@ export default function WorkerBrowseView({ onNavigate, gigs, initialTab }: Worke
                                     <span className="font-display font-bold text-lg text-secondary leading-none">{g.rate}</span>
                                   </div>
                                   <h3 className="font-display font-bold text-lg text-on-surface mt-2 group-hover:text-primary transition-colors">{g.title}</h3>
-                                  <p className="text-xs text-on-surface-variant mt-2 font-sans leading-relaxed">
-                                    {g.description}
-                                  </p>
+                                  <p className="text-xs text-on-surface-variant mt-2 font-sans leading-relaxed">{g.description}</p>
                                 </div>
 
                                 <div className="space-y-4">
@@ -430,10 +391,7 @@ export default function WorkerBrowseView({ onNavigate, gigs, initialTab }: Worke
                                       <span>Booked Instantly! Saved for shift.</span>
                                     </div>
                                   ) : (
-                                    <button 
-                                      onClick={() => handleApply(g.id, g.title, g.isInstant)}
-                                      className="w-full bg-primary hover:bg-primary/95 text-white py-3 rounded-xl font-bold active:scale-95 transition-transform text-xs cursor-pointer shadow-xs"
-                                    >
+                                    <button onClick={() => handleApply(g.id, g.title, g.isInstant)} className="w-full bg-primary hover:bg-primary/95 text-white py-3 rounded-xl font-bold active:scale-95 transition-transform text-xs cursor-pointer shadow-xs">
                                       Book Instantly
                                     </button>
                                   )}
@@ -444,14 +402,8 @@ export default function WorkerBrowseView({ onNavigate, gigs, initialTab }: Worke
                         );
                       }
 
-                      // Standard Cards items
                       return (
-                        <div 
-                          key={g.id} 
-                          className={`flex flex-col justify-between rounded-xl bg-white border border-outline-variant p-5 hover:shadow-md transition-all ${
-                            g.isInstant ? 'border-l-4 border-l-tertiary-container' : ''
-                          }`}
-                        >
+                        <div key={g.id} className={`flex flex-col justify-between rounded-xl bg-white border border-outline-variant p-5 hover:shadow-md transition-all ${g.isInstant ? 'border-l-4 border-l-tertiary-container' : ''}`}>
                           <div>
                             <div className="flex justify-between items-start">
                               <div className="p-2.5 bg-surface-container rounded-lg">
@@ -473,13 +425,9 @@ export default function WorkerBrowseView({ onNavigate, gigs, initialTab }: Worke
                             <p className="text-[11px] font-medium text-on-surface-variant mt-1">{g.employer}</p>
                             
                             <div className="flex flex-wrap gap-1.5 mt-4">
-                              <span className="bg-surface-container text-on-surface-variant text-[10px] px-2.5 py-1 rounded-full font-semibold">
-                                {g.distance}
-                              </span>
+                              <span className="bg-surface-container text-on-surface-variant text-[10px] px-2.5 py-1 rounded-full font-semibold">{g.distance}</span>
                               {g.tags && g.tags.map(tag => (
-                                <span key={tag} className="bg-surface-container text-on-surface-variant text-[10px] px-2.5 py-1 rounded-full font-semibold">
-                                  {tag}
-                                </span>
+                                <span key={tag} className="bg-surface-container text-on-surface-variant text-[10px] px-2.5 py-1 rounded-full font-semibold">{tag}</span>
                               ))}
                             </div>
                           </div>
@@ -493,11 +441,7 @@ export default function WorkerBrowseView({ onNavigate, gigs, initialTab }: Worke
                             ) : (
                               <button 
                                 onClick={() => handleApply(g.id, g.title, g.isInstant)}
-                                className={`w-full py-2 rounded-lg text-xs font-bold active:scale-95 transition-transform text-center cursor-pointer ${
-                                  g.isInstant 
-                                    ? 'bg-primary text-white' 
-                                    : 'border border-primary text-primary hover:bg-primary/5 bg-white'
-                                }`}
+                                className={`w-full py-2 rounded-lg text-xs font-bold active:scale-95 transition-transform text-center cursor-pointer ${g.isInstant ? 'bg-primary text-white' : 'border border-primary text-primary hover:bg-primary/5 bg-white'}`}
                               >
                                 {g.isInstant ? 'Book Now' : 'Apply Now'}
                               </button>
@@ -512,14 +456,12 @@ export default function WorkerBrowseView({ onNavigate, gigs, initialTab }: Worke
             </>
           )}
 
-          {/* ACTIVE TAB: Reliability (Embedded attendance tracking system) */}
           {activeTab === 'Reliability' && (
             <div className="max-w-7xl mx-auto px-4 md:px-8 mt-4">
               <WorkerReliabilityView onNavigate={onNavigate} isEmbedded={true} />
             </div>
           )}
 
-          {/* ACTIVE TAB: Earnings (Direct student bank transfer and clearance) */}
           {activeTab === 'Earnings' && (
             <div className="max-w-5xl mx-auto px-4 md:px-8 mt-4 space-y-6">
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-outline-variant pb-4">
@@ -533,9 +475,7 @@ export default function WorkerBrowseView({ onNavigate, gigs, initialTab }: Worke
                 </div>
               </div>
 
-              {/* Wallet Card Grid */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-6">
-                {/* Available for Payout */}
                 <div className="bg-gradient-to-br from-indigo-700 via-indigo-800 to-indigo-950 text-white p-6 rounded-3xl relative overflow-hidden flex flex-col justify-between h-[160px] shadow-md border border-indigo-650/40 group">
                   <div className="absolute right-0 bottom-0 w-24 h-24 bg-indigo-500/20 rounded-full blur-2xl pointer-events-none"></div>
                   <div className="flex justify-between items-center">
@@ -548,7 +488,6 @@ export default function WorkerBrowseView({ onNavigate, gigs, initialTab }: Worke
                   </div>
                 </div>
 
-                {/* Pending Verification */}
                 <div className="bg-white border border-neutral-100 p-6 rounded-3xl flex flex-col justify-between h-[160px] shadow-2xs">
                   <div className="flex justify-between items-center">
                     <span className="text-[11px] text-on-surface-variant font-bold uppercase tracking-wider">Pending Release</span>
@@ -560,7 +499,6 @@ export default function WorkerBrowseView({ onNavigate, gigs, initialTab }: Worke
                   </div>
                 </div>
 
-                {/* Total Cleared This Semester */}
                 <div className="bg-white border border-neutral-100 p-6 rounded-3xl flex flex-col justify-between h-[160px] shadow-2xs">
                   <div className="flex justify-between items-center">
                     <span className="text-[11px] text-on-surface-variant font-bold uppercase tracking-wider">Semester Total</span>
@@ -573,7 +511,6 @@ export default function WorkerBrowseView({ onNavigate, gigs, initialTab }: Worke
                 </div>
               </div>
 
-              {/* Instant Bank Payout Action */}
               <div className="bg-gradient-to-r from-teal-50 to-emerald-50 border border-teal-200/40 p-6 rounded-3xl flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div className="space-y-1 text-center sm:text-left">
                   <h3 className="font-display font-bold text-sm text-teal-900">Need funds immediately?</h3>
@@ -590,10 +527,8 @@ export default function WorkerBrowseView({ onNavigate, gigs, initialTab }: Worke
                 </button>
               </div>
 
-              {/* Transactions History */}
               <div className="bg-white border border-neutral-100 rounded-3xl p-6 shadow-2xs space-y-4">
                 <h3 className="font-display font-bold text-sm text-on-surface">Verified Payout History</h3>
-                
                 <div className="divide-y divide-neutral-100">
                   <div className="py-3.5 flex justify-between items-center">
                     <div className="flex items-center gap-3">
@@ -610,44 +545,11 @@ export default function WorkerBrowseView({ onNavigate, gigs, initialTab }: Worke
                       <span className="text-[8px] bg-teal-50 border border-teal-200/50 text-teal-700 font-bold px-1.5 py-0.5 rounded uppercase font-sans tracking-wide">Cleared</span>
                     </div>
                   </div>
-
-                  <div className="py-3.5 flex justify-between items-center">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-xl bg-teal-50 text-teal-700 flex items-center justify-center shrink-0">
-                        <Check size={16} />
-                      </div>
-                      <div>
-                        <p className="text-xs font-bold text-on-surface">Event Assistant Crew</p>
-                        <p className="text-[10px] text-on-surface-variant font-medium">ICC KK Hall • May 14, 2026</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs font-bold text-teal-700 font-mono">+RM 180.00</p>
-                      <span className="text-[8px] bg-teal-50 border border-teal-200/50 text-teal-700 font-bold px-1.5 py-0.5 rounded uppercase font-sans tracking-wide">Cleared</span>
-                    </div>
-                  </div>
-
-                  <div className="py-3.5 flex justify-between items-center">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-xl bg-teal-50 text-teal-700 flex items-center justify-center shrink-0">
-                        <Check size={16} />
-                      </div>
-                      <div>
-                        <p className="text-xs font-bold text-on-surface">Warehouse Logistics Sorting</p>
-                        <p className="text-[10px] text-on-surface-variant font-medium">Sabah Logistic Depot • May 04, 2026</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs font-bold text-teal-700 font-mono">+RM 228.00</p>
-                      <span className="text-[8px] bg-teal-50 border border-teal-200/50 text-teal-700 font-bold px-1.5 py-0.5 rounded uppercase font-sans tracking-wide">Cleared</span>
-                    </div>
-                  </div>
                 </div>
               </div>
             </div>
           )}
 
-          {/* ACTIVE TAB: Support (Help Desk, travel claims and Live Assist) */}
           {activeTab === 'Support' && (
             <div className="max-w-5xl mx-auto px-4 md:px-8 mt-4 space-y-6 font-sans">
               <div className="border-b border-outline-variant pb-4">
@@ -655,7 +557,6 @@ export default function WorkerBrowseView({ onNavigate, gigs, initialTab }: Worke
                 <p className="text-xs text-on-surface-variant font-medium">Emergency cancellations, travel/car fuel subsidy claims, or manual academic verification services.</p>
               </div>
 
-              {/* Help Cards */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6">
                 <div className="bg-white border border-neutral-100 p-6 rounded-3xl shadow-2xs space-y-3 hover:shadow-xs transition-shadow flex flex-col justify-between">
                   <div className="space-y-3">
@@ -664,10 +565,10 @@ export default function WorkerBrowseView({ onNavigate, gigs, initialTab }: Worke
                     </div>
                     <div>
                       <h3 className="font-display font-bold text-sm text-on-surface">Academic Matriculation Verification</h3>
-                      <p className="text-[11px] text-on-surface-variant font-medium leading-relaxed mt-1">If manual verification of student credentials is required, upload pictures of your active UMS/UiTM student card below for standard immediate audit approval.</p>
+                      <p className="text-[11px] text-on-surface-variant font-medium leading-relaxed mt-1">If manual verification of student credentials is required, upload pictures of your active student card below.</p>
                     </div>
                   </div>
-                  <button onClick={() => { setToastMessage("Manual portal initialized! Upload your raw Student Matriculation Card copy inside this widget."); setTimeout(() => setToastMessage(null), 4000); }} className="text-xs text-primary font-bold hover:underline cursor-pointer text-left mt-3">Upload Matriculation ID card &rarr;</button>
+                  <button onClick={() => { setToastMessage("Manual portal initialized! Upload your raw Student Matriculation Card copy inside this widget."); setTimeout(() => setToastMessage(null), 4000); }} className="text-xs text-primary font-bold hover:underline cursor-pointer text-left mt-3">Upload Matriculation ID card →</button>
                 </div>
 
                 <div className="bg-white border border-neutral-100 p-6 rounded-3xl shadow-2xs space-y-3 hover:shadow-xs transition-shadow flex flex-col justify-between">
@@ -676,59 +577,15 @@ export default function WorkerBrowseView({ onNavigate, gigs, initialTab }: Worke
                       <AlertCircle size={18} />
                     </div>
                     <div>
-                      <h3 className="font-display font-bold text-sm text-on-surface">Emergency Transit &amp; fuel subsidy claim</h3>
-                      <p className="text-[11px] text-on-surface-variant font-medium leading-relaxed mt-1">Travelling over 5km for an off-campus retail or logistics gig? File travel expense receipt claims securely inside this widget for petrol subsidy reimbursements.</p>
+                      <h3 className="font-display font-bold text-sm text-on-surface">Emergency Transit & fuel subsidy claim</h3>
+                      <p className="text-[11px] text-on-surface-variant font-medium leading-relaxed mt-1">Travelling over 5km for an off-campus retail or logistics gig? File travel expense receipt claims securely inside this widget.</p>
                     </div>
                   </div>
-                  <button onClick={() => { setToastMessage("Travel Claims dashboard initialized! Upload your valid petrol receipts (Sabah Petrol Stations) below."); setTimeout(() => setToastMessage(null), 4000); }} className="text-xs text-primary font-bold hover:underline cursor-pointer text-left mt-3">Submit petrol expense receipt &rarr;</button>
-                </div>
-              </div>
-
-              {/* Chat Assistance Mock Interface */}
-              <div className="bg-white border border-neutral-100 rounded-3xl p-6 shadow-2xs space-y-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse"></span>
-                  <h3 className="font-display font-bold text-sm text-on-surface">Interactive Help Center Bot</h3>
-                </div>
-
-                <div className="bg-neutral-50/50 border border-neutral-100 p-5 rounded-2xl min-h-[140px] flex flex-col justify-between">
-                  <div className="space-y-3.5 max-h-[220px] overflow-y-auto">
-                    <div className="flex gap-2.5 items-start text-xs pr-4">
-                      <div className="w-6 h-6 rounded-lg bg-primary text-white flex items-center justify-center font-bold text-[9px] shrink-0 mt-0.5">Bot</div>
-                      <div className="bg-white border border-neutral-100 p-2.5 rounded-2xl text-on-surface shadow-3xs leading-relaxed font-medium">Hello Ahmad Rosli! I am your GigIT Assist Bot. How can I help you today with your attendance scorecards, fuel travel vouchers, or Bank Islam clearances?</div>
-                    </div>
-                  </div>
-
-                  <div className="mt-5 pt-3.5 border-t border-outline-variant flex items-center gap-2">
-                    <input 
-                      type="text" 
-                      placeholder="Type your question (e.g. withdrawal status, cancel shift)..." 
-                      className="flex-1 bg-white border border-outline-variant/60 outline-none text-xs rounded-xl px-4 py-3 text-on-surface focus:border-primary font-medium"
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          const val = (e.currentTarget as HTMLInputElement).value;
-                          if (!val.trim()) return;
-                          e.currentTarget.value = '';
-                          setToastMessage(`Thanks! Support request successfully filed under "General Enquiry". We will send an email back under 10 minutes.`);
-                          setTimeout(() => setToastMessage(null), 5000);
-                        }
-                      }}
-                    />
-                    <button 
-                      onClick={() => {
-                        setToastMessage(`Thanks! Support request successfully filed under "General Enquiry". We will send an email back under 10 minutes.`);
-                        setTimeout(() => setToastMessage(null), 5000);
-                      }}
-                      className="bg-primary hover:bg-primary/95 text-white px-4 py-3 rounded-xl transition-all text-xs font-bold cursor-pointer"
-                    >
-                      Submit
-                    </button>
-                  </div>
+                  <button onClick={() => { setToastMessage("Travel Claims dashboard initialized! Upload your valid petrol receipts (Sabah Petrol Stations) below."); setTimeout(() => setToastMessage(null), 4000); }} className="text-xs text-primary font-bold hover:underline cursor-pointer text-left mt-3">Submit petrol expense receipt →</button>
                 </div>
               </div>
             </div>
           )}
-
         </main>
       </div>
 
@@ -737,8 +594,6 @@ export default function WorkerBrowseView({ onNavigate, gigs, initialTab }: Worke
         <button 
           onClick={() => setShowMapOnMobile(!showMapOnMobile)}
           className="bg-primary filter drop-shadow-xl scale-102 hover:bg-primary/95 text-white p-3.5 rounded-full flex items-center justify-center cursor-pointer transition-all active:scale-95 border border-primary-container"
-          title={showMapOnMobile ? "Switch to List View" : "Switch to Map View"}
-          id="mobile-toggle-view-fab"
         >
           <span className="material-symbols-outlined text-xl text-white">
             {showMapOnMobile ? 'list_alt' : 'map'}
@@ -748,26 +603,17 @@ export default function WorkerBrowseView({ onNavigate, gigs, initialTab }: Worke
 
       {/* Bottom Navigation Bar (Mobile Only) */}
       <div className="md:hidden fixed bottom-0 left-0 w-full z-50 bg-surface border-t border-outline-variant py-2 flex justify-around items-center shadow-lg font-sans">
-        <button 
-          onClick={() => onNavigate(AppView.Landing)}
-          className="flex flex-col items-center text-on-surface-variant"
-        >
+        <button onClick={() => onNavigate(AppView.Landing)} className="flex flex-col items-center text-on-surface-variant">
           <span className="material-symbols-outlined text-xl">home</span>
           <span className="text-[10px] mt-0.5">Home</span>
         </button>
-        <button 
-          onClick={() => { setActiveTab('Dashboard'); }}
-          className={`flex flex-col items-center ${activeTab === 'Dashboard' ? 'text-primary' : 'text-on-surface-variant'}`}
-        >
+        <button onClick={() => { setActiveTab('Dashboard'); }} className={`flex flex-col items-center ${activeTab === 'Dashboard' ? 'text-primary' : 'text-on-surface-variant'}`}>
           <div className={`p-1 px-4 rounded-full ${activeTab === 'Dashboard' ? 'bg-primary/10 text-primary' : 'text-on-surface-variant'}`}>
             <span className="material-symbols-outlined text-md">work</span>
           </div>
           <span className="text-[10px] font-semibold mt-1">Gigs</span>
         </button>
-        <button 
-          onClick={() => { setActiveTab('Reliability'); }}
-          className={`flex flex-col items-center ${activeTab === 'Reliability' ? 'text-primary' : 'text-on-surface-variant'}`}
-        >
+        <button onClick={() => { setActiveTab('Reliability'); }} className={`flex flex-col items-center ${activeTab === 'Reliability' ? 'text-primary' : 'text-on-surface-variant'}`}>
           <div className={`p-1 px-4 rounded-full ${activeTab === 'Reliability' ? 'bg-primary/10 text-primary' : 'text-on-surface-variant'}`}>
             <span className="material-symbols-outlined text-md">verified_user</span>
           </div>
