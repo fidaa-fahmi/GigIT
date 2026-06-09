@@ -1,13 +1,8 @@
-import { createClient } from '../supabaseClient';
-
-// Initialize Supabase client here to avoid missing-module import errors.
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '';
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+import { supabase } from '../supabaseClient'; 
 import { Gig, Applicant } from '../types';
 
 export const api = {
-  // 1. GET ALL GIGS (Fetch data from Database)
+  // 1. GET ALL GIGS
   async getGigs(): Promise<Gig[]> {
     const { data, error } = await supabase
       .from('gigs')
@@ -18,8 +13,7 @@ export const api = {
       console.error('Error fetching gigs:', error);
       throw error;
     }
-
-    // Map snake_case database fields back into camelCase TypeScript structures if necessary
+    
     return data.map((gig: any) => ({
       id: gig.id,
       title: gig.title,
