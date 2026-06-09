@@ -1,6 +1,8 @@
-import { useState, useMemo } from 'react';
 import { AppView, Gig } from '../types';
 import { initialGigs, initialBackupWorkers } from '../data';
+import React, { useEffect, useState } from 'react';
+import { api } from '../services/api';
+import { Gig } from '../types';
 import { 
   Bell, 
   User, 

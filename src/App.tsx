@@ -180,16 +180,16 @@ export default function App() {
                     <div className="border border-emerald-100 bg-emerald-50/40 rounded-2xl p-3 flex items-center justify-between gap-3 text-left">
                       <div className="flex items-center gap-2.5 min-w-0">
                         <div className="w-8 h-8 rounded-full overflow-hidden border border-emerald-300 shrink-0">
-                          {user.photoURL ? (
-                            <img src={user.photoURL} alt={user.displayName || 'Google Account'} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          {user?.user_metadata?.avatar_url ? (
+                            <img src={user?.user_metadata?.avatar_url} alt={user?.user_metadata?.name || 'Google Account'} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                           ) : (
                             <div className="w-full h-full bg-emerald-100 flex items-center justify-center text-emerald-800 font-extrabold text-xs">
-                              {user.displayName?.charAt(0) || 'U'}
+                              {user?.user_metadata?.name.charAt(0) || 'U'}
                             </div>
                           )}
                         </div>
                         <div className="text-[11px] leading-tight min-w-0">
-                          <p className="font-extrabold text-slate-800 truncate" title={user.displayName || ''}>{user.displayName || ''}</p>
+                          <p className="font-extrabold text-slate-800 truncate" title={user?.user_metadata?.name || ''}>{user?.user_metadata?.name || ''}</p>
                           <span className="text-[9px] text-emerald-600 font-bold uppercase tracking-wider font-mono">● Akaun Aktif</span>
                         </div>
                       </div>

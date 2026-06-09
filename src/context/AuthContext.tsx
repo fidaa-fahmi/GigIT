@@ -1,11 +1,12 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { User, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
-import { auth } from '../firebase';
+import { User } from '@supabase/supabase-js';
+import { supabase } from '../supabaseClient';
 
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  signInWithGoogle: () => Promise<void>;
+  signUpWithEmail: (email: string, password: string, fullName: string) => Promise<void>;
+  signInWithEmail: (email: string, password: string) => Promise<void>;
   logOut: () => Promise<void>;
 }
 
@@ -16,37 +17,68 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
+    // Check if user session already exists locally on window boot
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
       setLoading(false);
     });
-    return () => unsubscribe();
+
+    // Listen continuously for manual sign-ins/sign-outs
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      setLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  const signInWithGoogle = async () => {
-    const provider = new GoogleAuthProvider();
-    provider.setCustomParameters({
-      prompt: 'select_account'
-    });
+  // 1. FREE MANUAL REGISTRATION (Sign Up)
+  const signUpWithEmail = async (email: string, password: string, fullName: string) => {
     try {
-      await signInWithPopup(auth, provider);
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: fullName, // Saves user's name into user_metadata
+          },
+        },
+      });
+      if (error) throw error;
+      alert("Registration successful! Check your email inbox for a verification link if enabled.");
     } catch (error) {
-      console.error("Firebase Authentication Error: ", error);
+      console.error("Sign-up Error:", error);
       throw error;
     }
   };
 
+  // 2. FREE MANUAL LOGIN (Sign In)
+  const signInWithEmail = async (email: string, password: string) => {
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (error) throw error;
+    } catch (error) {
+      console.error("Sign-in Error:", error);
+      throw error;
+    }
+  };
+
+  // 3. SYSTEM LOGOUT
   const logOut = async () => {
     try {
-      await signOut(auth);
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
     } catch (error) {
-      console.error("Firebase Sign Out Error: ", error);
+      console.error("Sign-out Error:", error);
       throw error;
     }
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, signInWithGoogle, logOut }}>
+    <AuthContext.Provider value={{ user, loading, signUpWithEmail, signInWithEmail, logOut }}>
       {children}
     </AuthContext.Provider>
   );
