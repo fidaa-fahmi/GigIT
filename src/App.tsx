@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AppView, Gig } from './types';
 import { initialGigs } from './data';
 import LandingView from './components/LandingView';
@@ -16,7 +16,7 @@ export default function App() {
   const [currentView, setCurrentView] = useState<AppView>(AppView.Landing);
   const [gigs, setGigs] = useState<Gig[]>(initialGigs);
   const [showSelector, setShowSelector] = useState(false);
-
+  const [selectedRole, setSelectedRole] = useState<'worker' | 'employer'>('worker');
   // States for manual email login
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -39,7 +39,8 @@ export default function App() {
     setAuthError(null);
     try {
       if (isRegistering) {
-        await signUpWithEmail(email, password, "Pengguna Baru");
+        // Pass the selectedRole to the context
+        await signUpWithEmail(email, password, "Pengguna Baru", selectedRole);
         alert("Pendaftaran berjaya! Sila log masuk.");
         setIsRegistering(false);
         setPassword('');
@@ -50,6 +51,20 @@ export default function App() {
       setAuthError(err.message || "Ralat pengesahan. Sila semak butiran anda.");
     }
   };
+
+  useEffect(() => {
+    if (user) {
+      const role = user.user_metadata?.role;
+      if (role === 'employer') {
+        setCurrentView(AppView.EmployerDashboard);
+      } else {
+        setCurrentView(AppView.WorkerBrowse);
+      }
+      setShowSelector(false); // Close the modal if it's open
+    } else {
+      setCurrentView(AppView.Landing);
+    }
+  }, [user]);
 
   return (
     <div className="min-h-screen bg-background text-on-surface antialiased transition-colors">
@@ -188,34 +203,29 @@ export default function App() {
                       <form onSubmit={handleManualAuth} className="space-y-2">
                         <div className="relative">
                           <Mail size={14} className="absolute left-3 top-2.5 text-indigo-400" />
-                          <input 
-                            type="email" 
-                            required
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            placeholder="Alamat E-mel" 
-                            className="w-full pl-9 pr-3 py-2 rounded-lg border border-indigo-200 text-xs focus:outline-indigo-500 bg-white"
-                          />
+                          <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Alamat E-mel" className="w-full pl-9 pr-3 py-2 rounded-lg border border-indigo-200 text-xs focus:outline-indigo-500 bg-white" />
                         </div>
                         <div className="relative">
                           <Lock size={14} className="absolute left-3 top-2.5 text-indigo-400" />
-                          <input 
-                            type="password" 
-                            required
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            placeholder="Kata Laluan" 
-                            className="w-full pl-9 pr-3 py-2 rounded-lg border border-indigo-200 text-xs focus:outline-indigo-500 bg-white"
-                          />
+                          <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Kata Laluan" className="w-full pl-9 pr-3 py-2 rounded-lg border border-indigo-200 text-xs focus:outline-indigo-500 bg-white" />
                         </div>
+
+                        {/* NEW: Show Role Selector only when registering */}
+                        {isRegistering && (
+                          <div className="flex gap-2 pt-1">
+                            <button type="button" onClick={() => setSelectedRole('worker')} className={`flex-1 py-1.5 text-[10px] font-bold rounded-md border ${selectedRole === 'worker' ? 'bg-indigo-100 border-indigo-500 text-indigo-700' : 'bg-white border-gray-200 text-gray-500'}`}>
+                              👤 Worker
+                            </button>
+                            <button type="button" onClick={() => setSelectedRole('employer')} className={`flex-1 py-1.5 text-[10px] font-bold rounded-md border ${selectedRole === 'employer' ? 'bg-indigo-100 border-indigo-500 text-indigo-700' : 'bg-white border-gray-200 text-gray-500'}`}>
+                              🏢 Employer
+                            </button>
+                          </div>
+                        )}
                         
                         {authError && <p className="text-[9px] text-red-600 font-bold leading-tight mt-1">{authError}</p>}
 
-                        <button
-                          type="submit"
-                          className="w-full py-2.5 px-4 mt-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold text-xs rounded-xl flex items-center justify-center cursor-pointer shadow-xs transition-colors"
-                        >
-                          {isRegistering ? 'Daftar Sekarang' : 'Sahkan Log Masuk'}
+                        <button type="submit" className="w-full py-2.5 px-4 mt-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl transition-colors cursor-pointer">
+                          {isRegistering ? `Daftar sebagai ${selectedRole === 'worker' ? 'Pekerja' : 'Majikan'}` : 'Sahkan Log Masuk'}
                         </button>
                       </form>
 

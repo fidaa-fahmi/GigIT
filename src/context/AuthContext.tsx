@@ -7,7 +7,7 @@ import { supabase } from '../supabaseClient';
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  signUpWithEmail: (email: string, password: string, fullName: string) => Promise<void>;
+  signUpWithEmail: (email: string, password: string, fullName: string, role: string) => Promise<void>; // ADD ROLE HERE
   signInWithEmail: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   logOut: () => Promise<void>;
@@ -36,15 +36,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // 1. FREE MANUAL REGISTRATION (Sign Up)
-  const signUpWithEmail = async (email: string, password: string, fullName: string) => {
+  const signUpWithEmail = async (email: string, password: string, fullName: string, role: string) => {
     const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: { full_name: fullName },
+        data: { 
+          full_name: fullName,
+          role: role // Save the role (worker or employer)
+        },
       },
     });
-    // FIX: removed alert() — callers should handle UI feedback themselves
     if (error) throw error;
   };
 

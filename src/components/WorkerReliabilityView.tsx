@@ -99,26 +99,23 @@ export default function WorkerReliabilityView({ onNavigate, isEmbedded = false }
     <div className={isEmbedded ? "bg-transparent text-on-surface font-sans" : "bg-background min-h-screen text-on-surface font-sans selection:bg-primary-container selection:text-on-primary-container"}>
       {/* Top Navigation Row (Only render if NOT embedded) */}
       {!isEmbedded && (
-        <nav className="fixed top-0 left-0 w-full z-50 flex items-center justify-between px-4 md:px-8 h-16 bg-white border-b border-outline-variant shadow-xs">
-          <button 
-            onClick={() => onNavigate(AppView.WorkerBrowse)}
-            className="flex items-center gap-2 hover:text-primary transition-colors text-xs font-semibold cursor-pointer py-2 px-3 hover:bg-surface-container rounded-lg"
-          >
-            <ArrowLeft size={16} />
-            <span>Back to Gigs</span>
-          </button>
-          <div className="flex items-center gap-1">
-            <Award size={18} className="text-primary" />
-            <span className="font-display font-semibold text-sm text-primary">Student Reliability Center</span>
+        <header className="fixed top-0 left-0 w-full z-50 flex justify-between items-center px-4 md:px-8 h-16 bg-surface border-b border-outline-variant shadow-xs">
+          <div className="flex items-center gap-2 cursor-pointer" onClick={() => onNavigate(AppView.Landing)}>
+            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-white font-bold text-lg font-display">G</div>
+            <span className="font-display font-bold text-xl text-primary tracking-tight">GigIT</span>
           </div>
-          <div className="w-8 h-8 rounded-full overflow-hidden border border-outline-variant">
-            <img 
-              alt="Ahmad Rosli" 
-              className="w-full h-full object-cover" 
-              src="https://lh3.googleusercontent.com/aida-public/AB6AXuDR_yuEE9W4djP9NUe9iDVsrhbbqm4c33mAlfDjziC8BLi_t74hQq-KG0VktJpJg9e--D2XO_NUJzmL5quEgka7Um1OL0iazTpJDBk71rPxSF_7N91D4ACo2dyhpbQaQodHH1Y8V3o4TIlrZgWRvHjAC2X9e_dr4LNN0WjGpn_X8vOC3xbjAaAMLbuwKZJKr3YOmYSEML-QJ8N2QRPq864qy9TCjIv8nbsuGkNHlZbRcD8MLFgVDmT-5MVc6EdJ2JyyGQ_SQlnRwWQ" 
-            />
+
+          <div className="hidden lg:flex items-center gap-6">
+            <button onClick={() => onNavigate(AppView.WorkerBrowse)} className="text-on-surface-variant hover:text-primary transition-colors text-sm font-semibold tracking-wide cursor-pointer">Find Gigs</button>
+            <button onClick={() => onNavigate(AppView.WorkerReliability)} className="text-primary font-bold border-b-2 border-primary py-1 text-sm tracking-wide cursor-pointer">Reliability Portal</button>
           </div>
-        </nav>
+
+          <div className="flex items-center gap-4">
+            <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-white font-bold cursor-pointer">
+              W
+            </div>
+          </div>
+        </header>
       )}
 
       <main className={isEmbedded ? "space-y-8 pt-2 pb-16" : "pt-24 px-4 md:px-8 pb-24 max-w-7xl mx-auto space-y-8"}>
