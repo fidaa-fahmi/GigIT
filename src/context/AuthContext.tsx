@@ -2,11 +2,14 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { User } from '@supabase/supabase-js';
 import { supabase } from '../supabaseClient';
 
+// FIX: Added signInWithGoogle to the interface — App.tsx calls this but it
+// was missing from the context, causing a silent runtime crash on click.
 interface AuthContextType {
   user: User | null;
   loading: boolean;
   signUpWithEmail: (email: string, password: string, fullName: string) => Promise<void>;
   signInWithEmail: (email: string, password: string) => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
   logOut: () => Promise<void>;
 }
 
@@ -34,51 +37,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // 1. FREE MANUAL REGISTRATION (Sign Up)
   const signUpWithEmail = async (email: string, password: string, fullName: string) => {
-    try {
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            full_name: fullName, // Saves user's name into user_metadata
-          },
-        },
-      });
-      if (error) throw error;
-      alert("Registration successful! Check your email inbox for a verification link if enabled.");
-    } catch (error) {
-      console.error("Sign-up Error:", error);
-      throw error;
-    }
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { full_name: fullName },
+      },
+    });
+    // FIX: removed alert() — callers should handle UI feedback themselves
+    if (error) throw error;
   };
 
   // 2. FREE MANUAL LOGIN (Sign In)
   const signInWithEmail = async (email: string, password: string) => {
-    try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-      if (error) throw error;
-    } catch (error) {
-      console.error("Sign-in Error:", error);
-      throw error;
-    }
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
   };
 
-  // 3. SYSTEM LOGOUT
+  // 3. GOOGLE OAUTH LOGIN
+  // FIX: This function was called in App.tsx but was never defined here.
+  // Supabase OAuth redirects to the current page after authentication.
+  const signInWithGoogle = async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin,
+      },
+    });
+    if (error) throw error;
+  };
+
+  // 4. SYSTEM LOGOUT
   const logOut = async () => {
-    try {
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
-    } catch (error) {
-      console.error("Sign-out Error:", error);
-      throw error;
-    }
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, signUpWithEmail, signInWithEmail, logOut }}>
+    <AuthContext.Provider value={{ user, loading, signUpWithEmail, signInWithEmail, signInWithGoogle, logOut }}>
       {children}
     </AuthContext.Provider>
   );

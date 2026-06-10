@@ -19,7 +19,9 @@ export interface Gig {
   description?: string;
   tags?: string[];
   imageUrl?: string;
-  coords: { x: number; y: number }; // Percentage offsets for visual map pins
+  // FIX: coords now carries both visual map offsets (x/y %) AND real GPS coords (lat/lng)
+  // lat/lng are required for Leaflet; x/y are kept for any legacy visual map pins
+  coords: { x: number; y: number; lat: number; lng: number };
 }
 
 export interface Applicant {

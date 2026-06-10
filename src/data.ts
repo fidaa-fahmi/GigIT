@@ -1,5 +1,7 @@
 import { Gig, Applicant, BackupWorker, Testimonial, WorkHistoryItem } from './types';
 
+// FIX: All gigs now carry real KK GPS coordinates (lat/lng) for Leaflet map pins.
+// x/y percentage offsets are preserved for any legacy visual map usage.
 export const initialGigs: Gig[] = [
   {
     id: 'gig-1',
@@ -15,7 +17,7 @@ export const initialGigs: Gig[] = [
     description: 'Assist in registration and ushering for the upcoming tech expo at SICC. Perfect for students looking for professional networking.',
     tags: ['Event Support', 'No Experience Required'],
     imageUrl: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBzOE7QysQJGfgSgTO7HOCD5d32EYyRmijyiACpQC6CzT1r11LxRq4qwd6C3pvrrPXxNH1W5P3otXpzoAT7lHF8ZEx8CZ8DVRE4RW5fGSiYyBEID2lf7nbsCEv89OwAut2GC-DCNAnVUOAYPy23AWxfBWxOMqVW9tH5X19rTchBrU_9vkLHXefuCdSCqnYS53p60fi96QqIgtJtnuDYaxW0TaccDYm1V4zGRG8W_ZRGAc5p5N750pJQrAecvfodK_Zn6kHzgojSvt8',
-    coords: { x: 67, y: 35 } // SICC location offset on KK map
+    coords: { x: 67, y: 35, lat: 6.0400, lng: 116.1200 }, // SICC, Kota Kinabalu
   },
   {
     id: 'gig-2',
@@ -31,7 +33,7 @@ export const initialGigs: Gig[] = [
     description: 'Take orders, serve food, and help maintain clean dining areas. Fun team and free staff meals included!',
     tags: ['F&B Experience', 'Meals Provided'],
     imageUrl: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAj-1BgYDZd9rj0cWlIQ8xhcdYL3G4CbjFlAOytGl0FguutZQ5V673dqYy-ty2tjxPd52fqRn7TC9_z3pY7Fg5cWzKJu0ME27RIYswSDtWxCzwVreBI0qiOZACJI81Yw0ckFoIPwAJa6QFvzCdz4bY0Ix6K1wmoxE7khRuXK6AA3Zat9BAsB6nYeW2nP1JiivG6fri7mbxdUWTUddo9kT2E_StPNeIxQbDLgHSlcDcGKkNos9ObO7myswq7ApjsEaNsBKP-7bb7TsI',
-    coords: { x: 58, y: 55 }
+    coords: { x: 58, y: 55, lat: 5.9749, lng: 116.0724 }, // KK Town center
   },
   {
     id: 'gig-3',
@@ -46,7 +48,7 @@ export const initialGigs: Gig[] = [
     duration: '8 Hours',
     description: 'Help scan, organize, and stack incoming holiday parcels. Requires quick feet and heavy lifting.',
     tags: ['Heavy Lifting', 'Logistics Support'],
-    coords: { x: 38, y: 25 }
+    coords: { x: 38, y: 25, lat: 6.0586, lng: 116.1254 }, // Inanam industrial area
   },
   {
     id: 'gig-4',
@@ -61,7 +63,7 @@ export const initialGigs: Gig[] = [
     duration: 'Full Day',
     description: 'Introduce a new smartphone brand to shoppers at the central court helper booth. Exciting high commissions available!',
     tags: ['Sales Skills', 'Outgoing Personality'],
-    coords: { x: 74, y: 65 }
+    coords: { x: 74, y: 65, lat: 5.9799, lng: 116.0727 }, // Imago Mall, Api-Api
   },
   {
     id: 'gig-5',
@@ -76,7 +78,7 @@ export const initialGigs: Gig[] = [
     duration: '3 Hours',
     description: 'Wipe tables, sweep up floors, and refresh coffee counters before the library opens at 8:00 AM.',
     tags: ['No-nonsense', 'Early Shifts'],
-    coords: { x: 44, y: 15 }
+    coords: { x: 44, y: 15, lat: 6.0367, lng: 116.1186 }, // UMS Campus
   }
 ];
 
@@ -145,7 +147,7 @@ export const testimonials: Testimonial[] = [
     quote: "Running a cafe in Damai is hectic. GigIT's backup pool saved us when two staff fell ill during a holiday. The quality of students we get is professional and reliable.",
     author: 'Ken Wong',
     authorSub: 'Owner, The Daily Brew KK',
-    avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXu043A0fFLBy11Wp-ogt-r89wGe_xSwHjeHaGkC3Wi_kg08JSAjiNMbU0cX_kN5xefTADdphqq31L9BeoUnI8MnbpoL19AeQ0zJ9Ar3GGSuKi-zcT3Wx5Y-WLHo3041IqW302WCKPZbdohN_gi3Fvsfh_8HCXLb5b6gND4X9pSNpdcn7DCfhYLyY9L6xIeIGbRWhFHVZ3sq6UBLTGSJTtWFh94qM6oZDWooVd_UOnQ4G1ZaYjea-Jt-wUUwQMoFtoCmyC2lDpTZqdY'
+    avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXu043A0fFLBy11Wp-ogt-r89wGe_xSwHjeHaGkC3Wi_kg08JSAjiNMbU0cX_kN5xefTADdphqq31L9BeoUnI8MnbpoL19AeQ0zJ9Ar3GGSuKi-zcT3Wx5Y-WLHo3041IqW302WCKPZbdohN_gi3Fvsfh_8HCXLb5b6gND4X9pSNpdcn7DCfhYLyY9L6xIeIGbRWhFHVZ3sq6UBLTGJSttWFh94qM6oZDWooVd_UOnQ4G1ZaYjea-Jt-wUUwQMoFtoCmyC2lDpTZqdY'
   }
 ];
 

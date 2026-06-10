@@ -4,18 +4,26 @@ import { initialGigs } from './data';
 import LandingView from './components/LandingView';
 import EmployerDashboardView from './components/EmployerDashboardView';
 import WorkerBrowseView from './components/WorkerBrowseView';
+// FIX: WorkerReliabilityView is now actually imported AND rendered.
 import WorkerReliabilityView from './components/WorkerReliabilityView';
-import { Users, User, X, Sparkles, Check } from 'lucide-react';
+import { User, X, Check, Mail, Lock } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from './context/AuthContext';
 
 export default function App() {
-  const { user, logOut, signInWithGoogle } = useAuth();
+  // Switched from Google Auth to Manual Email Auth methods
+  const { user, logOut, signInWithEmail, signUpWithEmail } = useAuth();
   const [currentView, setCurrentView] = useState<AppView>(AppView.Landing);
   const [gigs, setGigs] = useState<Gig[]>(initialGigs);
   const [showSelector, setShowSelector] = useState(false);
 
-  // Common function to add custom gigs posted by Maria (Employer)
+  // States for manual email login
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+
+  // Called when an employer posts a new gig — adds it to the shared gig list
   const handleAddGig = (newGig: Gig) => {
     setGigs(prev => [newGig, ...prev]);
   };
@@ -25,37 +33,55 @@ export default function App() {
     setShowSelector(false);
   };
 
+  // Handler for Email/Password form submission
+  const handleManualAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    try {
+      if (isRegistering) {
+        await signUpWithEmail(email, password, "Pengguna Baru");
+        alert("Pendaftaran berjaya! Sila log masuk.");
+        setIsRegistering(false);
+        setPassword('');
+      } else {
+        await signInWithEmail(email, password);
+      }
+    } catch (err: any) {
+      setAuthError(err.message || "Ralat pengesahan. Sila semak butiran anda.");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background text-on-surface antialiased transition-colors">
-      {/* Route Views Switches */}
+      {/* Route Views */}
       <div>
         {currentView === AppView.Landing && (
-          <LandingView 
-            onNavigate={setCurrentView} 
-            onOpenSelector={() => setShowSelector(true)} 
+          <LandingView
+            onNavigate={setCurrentView}
+            onOpenSelector={() => setShowSelector(true)}
           />
         )}
 
         {currentView === AppView.EmployerDashboard && (
-          <EmployerDashboardView 
-            onNavigate={setCurrentView} 
+          <EmployerDashboardView
+            onNavigate={setCurrentView}
             gigs={gigs}
             onAddGig={handleAddGig}
           />
         )}
 
+        {/* FIX: gigs prop removed — WorkerBrowseView fetches its own data from Supabase */}
         {currentView === AppView.WorkerBrowse && (
-          <WorkerBrowseView 
-            onNavigate={setCurrentView} 
-            gigs={gigs} 
+          <WorkerBrowseView
+            onNavigate={setCurrentView}
+            fallbackGigs={gigs}
           />
         )}
 
+        {/* FIX: Now renders WorkerReliabilityView correctly */}
         {currentView === AppView.WorkerReliability && (
-          <WorkerBrowseView 
-            onNavigate={setCurrentView} 
-            gigs={gigs}
-            initialTab="Reliability"
+          <WorkerReliabilityView
+            onNavigate={setCurrentView}
           />
         )}
       </div>
@@ -64,7 +90,7 @@ export default function App() {
       <AnimatePresence>
         {showSelector && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-            <motion.div 
+            <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
@@ -76,8 +102,8 @@ export default function App() {
                   <span className="material-symbols-outlined text-primary text-xl">sync_alt</span>
                   <h3 className="font-sans font-bold text-base text-primary mr-2">Switch Active Workspace</h3>
                 </div>
-                <button 
-                  onClick={() => setShowSelector(false)} 
+                <button
+                  onClick={() => setShowSelector(false)}
                   className="text-on-surface-variant hover:text-on-surface p-1 rounded-full hover:bg-surface-container-low transition-colors"
                   id="close-switcher-btn"
                 >
@@ -92,21 +118,21 @@ export default function App() {
 
                 <div className="space-y-3">
                   {/* Option 1: Worker */}
-                  <div 
+                  <div
                     onClick={() => handleRoleSelect(AppView.WorkerBrowse)}
                     className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex items-center justify-between group ${
                       currentView === AppView.WorkerBrowse || currentView === AppView.WorkerReliability
-                        ? 'border-primary bg-primary/5' 
+                        ? 'border-primary bg-primary/5'
                         : 'border-outline-variant/60 hover:border-primary/55 bg-surface-container-lowest'
                     }`}
                     id="worker-profile-card"
                   >
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-xl overflow-hidden border border-outline-variant">
-                        <img 
-                          alt="Ahmad Rosli" 
-                          className="w-full h-full object-cover" 
-                          src="https://lh3.googleusercontent.com/aida-public/AB6AXuDR_yuEE9W4djP9NUe9iDVsrhbbqm4c33mAlfDjziC8BLi_t74hQq-KG0VktJpJg9e--D2XO_NUJzmL5quEgka7Um1OL0iazTpJDBk71rPxSF_7N91D4ACo2dyhpbQaQodHH1Y8V3o4TIlrZgWRvHjAC2X9e_dr4LNN0WjGpn_X8vOC3xbjAaAMLbuwKZJKr3YOmYSEML-QJ8N2QRPq864qy9TCjIv8nbsuGkNHlZbRcD8MLFgVDmT-5MVc6EdJ2JyyGQ_SQlnRwWQ" 
+                        <img
+                          alt="Ahmad Rosli"
+                          className="w-full h-full object-cover"
+                          src="https://lh3.googleusercontent.com/aida-public/AB6AXuDR_yuEE9W4djP9NUe9iDVsrhbbqm4c33mAlfDjziC8BLi_t74hQq-KG0VktJpJg9e--D2XO_NUJzmL5quEgka7Um1OL0iazTpJDBk71rPxSF_7N91D4ACo2dyhpbQaQodHH1Y8V3o4TIlrZgWRvHjAC2X9e_dr4LNN0WjGpn_X8vOC3xbjAaAMLbuwKZJKr3YOmYSEML-QJ8N2QRPq864qy9TCjIv8nbsuGkNHlZbRcD8MLFgVDmT-5MVc6EdJ2JyyGQ_SQlnRwWQ"
                         />
                       </div>
                       <div>
@@ -120,21 +146,21 @@ export default function App() {
                   </div>
 
                   {/* Option 2: Employer */}
-                  <div 
+                  <div
                     onClick={() => handleRoleSelect(AppView.EmployerDashboard)}
                     className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex items-center justify-between group ${
-                      currentView === AppView.EmployerDashboard 
-                        ? 'border-primary bg-primary/5' 
+                      currentView === AppView.EmployerDashboard
+                        ? 'border-primary bg-primary/5'
                         : 'border-outline-variant/60 hover:border-primary/55 bg-surface-container-lowest'
                     }`}
                     id="employer-profile-card"
                   >
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-xl overflow-hidden border border-outline-variant">
-                        <img 
-                          alt="Maria Manager" 
-                          className="w-full h-full object-cover" 
-                          src="https://lh3.googleusercontent.com/aida-public/AB6AXuArlkh8-LRzjsQ5aRbsLAeGaHCHMzCiX7slvulwgFNbafUydbCB8q533tkOZVnPrAcL0Tipwd9u_hGs_JSQEwZOzZmWmQ-0UT9sNNJ4XXK0ka9XNDUxr3QRBlQw2nqJxFQm0tA7ZjKb3ascTvRZDv7oWN_zjqb6sSdnPO4uPDqCHU04N9eo7oL8mE7XpzvrAqHziltAMM0XWqDAjGLCSpQBEsONsiX0twIPZC-sLYfN3B7i4qnfRTFV1nx_zMYcUo725YqWhzYxpxU" 
+                        <img
+                          alt="Maria Manager"
+                          className="w-full h-full object-cover"
+                          src="https://lh3.googleusercontent.com/aida-public/AB6AXuArlkh8-LRzjsQ5aRbsLAeGaHCHMzCiX7slvulwgFNbafUydbCB8q533tkOZVnPrAcL0Tipwd9u_hGs_JSQEwZOzZmWmQ-0UT9sNNJ4XXK0ka9XNDUxr3QRBlQw2nqJxFQm0tA7ZjKb3ascTvRZDv7oWN_zjqb6sSdnPO4uPDqCHU04N9eo7oL8mE7XpzvrAqHziltAMM0XWqDAjGLCSpQBEsONsiX0twIPZC-sLYfN3B7i4qnfRTFV1nx_zMYcUo725YqWhzYxpxU"
                         />
                       </div>
                       <div>
@@ -148,55 +174,77 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Google Sign In Integration */}
+                {/* Secure Manual Email Authentication Integration */}
                 <div className="border-t border-outline-variant pt-4">
                   {!user ? (
-                    <div className="border border-indigo-100 bg-indigo-50/50 rounded-2xl p-4 text-left space-y-2">
-                      <div className="flex justify-between items-center">
-                        <span className="text-[10px] font-extrabold text-indigo-900 tracking-wider uppercase font-sans">Akaun Bersepadu ID</span>
-                        <span className="text-[8px] font-bold text-indigo-600 bg-indigo-100 px-1.5 py-0.5 rounded uppercase font-mono">Firebase</span>
+                    <div className="border border-indigo-100 bg-indigo-50/50 rounded-2xl p-4 text-left space-y-3">
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-[10px] font-extrabold text-indigo-900 tracking-wider uppercase font-sans">
+                          {isRegistering ? 'Daftar Akaun Baru' : 'Akaun Bersepadu ID'}
+                        </span>
+                        <span className="text-[8px] font-bold text-indigo-600 bg-indigo-100 px-1.5 py-0.5 rounded uppercase font-mono">Supabase Auth</span>
                       </div>
-                      <p className="text-[11px] text-slate-600 leading-normal font-sans font-medium">
-                        Log masuk menggunakan Google untuk mendaftar profil, menjejak ganjaran mikro-gig DuitNow & semakan Kad Matrik.
-                      </p>
-                      <button
-                        onClick={async () => {
-                          try {
-                            await signInWithGoogle();
-                          } catch (e) {
-                            console.error("Manual Google Login Error in Portal: ", e);
-                          }
-                        }}
-                        className="w-full py-2 px-4 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-xs transition-colors"
-                        id="portal-navigate-login-btn"
-                      >
-                        <svg className="w-3.5 h-3.5 fill-current shrink-0" viewBox="0 0 24 24">
-                          <path d="M12.24 10.285V14.4h6.887c-.648 2.41-2.519 4.114-5.136 4.114-3.414 0-6.19-2.77-6.19-6.19 0-3.418 2.776-6.19 6.19-6.19 1.437 0 2.748.49 3.8 1.346l3.076-3.075C18.82 2.373 15.717 1 12.24 1 5.485 1 0 6.485 0 13.24c0 6.757 5.485 12.24 12.24 12.24 6.115 0 11.23-4.388 11.23-11.24 0-.671-.06-1.32-.164-1.955H12.24z" />
-                        </svg>
-                        <span>Sahkan Google Log Masuk</span>
-                      </button>
+                      
+                      <form onSubmit={handleManualAuth} className="space-y-2">
+                        <div className="relative">
+                          <Mail size={14} className="absolute left-3 top-2.5 text-indigo-400" />
+                          <input 
+                            type="email" 
+                            required
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            placeholder="Alamat E-mel" 
+                            className="w-full pl-9 pr-3 py-2 rounded-lg border border-indigo-200 text-xs focus:outline-indigo-500 bg-white"
+                          />
+                        </div>
+                        <div className="relative">
+                          <Lock size={14} className="absolute left-3 top-2.5 text-indigo-400" />
+                          <input 
+                            type="password" 
+                            required
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            placeholder="Kata Laluan" 
+                            className="w-full pl-9 pr-3 py-2 rounded-lg border border-indigo-200 text-xs focus:outline-indigo-500 bg-white"
+                          />
+                        </div>
+                        
+                        {authError && <p className="text-[9px] text-red-600 font-bold leading-tight mt-1">{authError}</p>}
+
+                        <button
+                          type="submit"
+                          className="w-full py-2.5 px-4 mt-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold text-xs rounded-xl flex items-center justify-center cursor-pointer shadow-xs transition-colors"
+                        >
+                          {isRegistering ? 'Daftar Sekarang' : 'Sahkan Log Masuk'}
+                        </button>
+                      </form>
+
+                      <div className="text-center pt-1">
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            setIsRegistering(!isRegistering);
+                            setAuthError(null);
+                          }}
+                          className="text-[10px] text-indigo-600 font-bold hover:underline cursor-pointer"
+                        >
+                          {isRegistering ? 'Sudah ada akaun? Log Masuk' : 'Belum ada akaun? Daftar Sini'}
+                        </button>
+                      </div>
                     </div>
                   ) : (
                     <div className="border border-emerald-100 bg-emerald-50/40 rounded-2xl p-3 flex items-center justify-between gap-3 text-left">
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-8 h-8 rounded-full overflow-hidden border border-emerald-300 shrink-0">
-                          {user?.user_metadata?.avatar_url ? (
-                            <img src={user?.user_metadata?.avatar_url} alt={user?.user_metadata?.name || 'Google Account'} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                          ) : (
-                            <div className="w-full h-full bg-emerald-100 flex items-center justify-center text-emerald-800 font-extrabold text-xs">
-                              {user?.user_metadata?.name.charAt(0) || 'U'}
-                            </div>
-                          )}
+                        <div className="w-8 h-8 rounded-full overflow-hidden border border-emerald-300 shrink-0 bg-emerald-100 flex items-center justify-center text-emerald-800 font-extrabold text-xs">
+                          {user.email?.charAt(0).toUpperCase()}
                         </div>
                         <div className="text-[11px] leading-tight min-w-0">
-                          <p className="font-extrabold text-slate-800 truncate" title={user?.user_metadata?.name || ''}>{user?.user_metadata?.name || ''}</p>
+                          <p className="font-extrabold text-slate-800 truncate" title={user.email}>{user.email}</p>
                           <span className="text-[9px] text-emerald-600 font-bold uppercase tracking-wider font-mono">● Akaun Aktif</span>
                         </div>
                       </div>
                       <button
-                        onClick={() => {
-                          logOut();
-                        }}
+                        onClick={() => logOut()}
                         className="text-[10px] font-extrabold text-rose-600 hover:text-rose-800 hover:underline transition-colors shrink-0 cursor-pointer"
                       >
                         Keluar / Sign Out
@@ -206,11 +254,11 @@ export default function App() {
                 </div>
 
                 <div className="pt-2 text-center">
-                  <button 
+                  <button
                     onClick={() => handleRoleSelect(AppView.Landing)}
                     className="text-[11px] font-bold text-primary hover:underline cursor-pointer transition-all"
                   >
-                    Return to Portal Landing Home Pages
+                    Return to Portal Landing Home
                   </button>
                 </div>
               </div>
