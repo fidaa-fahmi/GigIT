@@ -87,3 +87,4 @@ export function useAuth() {
   }
   return context;
 }
+// FIX: This file was created to centralize all authentication logic and state management.
