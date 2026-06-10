@@ -1,5 +1,121 @@
 import { supabase } from '../supabaseClient';
 import { Gig, Applicant } from '../types';
+import { GoogleGenAI } from '@google/genai';
+
+const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
+
+export async function verifyStudentIdWithAI(imageBase64: string) {
+  const prompt = `
+    You are an academic verification system for GigIT Sabah. 
+    Analyze this ID card image. Extract the student's name, university name, and matric/student ID.
+    Determine if this looks like a valid University ID card from Malaysia (like UMS, UiTM, etc).
+    Return ONLY a JSON object: { "isValid": boolean, "name": string, "university": string, "matricId": string, "reason": string }
+  `;
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-2.5-flash',
+    contents: [
+      { text: prompt },
+      { inlineData: { data: imageBase64.split(',')[1], mimeType: 'image/jpeg' } }
+    ],
+    config: { responseMimeType: "application/json" }
+  });
+
+  const result = JSON.parse(response.text);
+  
+  if (result.isValid) {
+    // Save to Supabase
+    await supabase.from('profiles').update({
+      is_verified: true,
+      university: result.university,
+      matric_id: result.matricId
+    }).eq('id', (await supabase.auth.getUser()).data.user?.id);
+  }
+  
+  return result;
+}
+export async function submitGigReviewWithAI(applicationId: string, employerId: string, workerId: string, rawRating: number, comment: string) {
+  // 1. Ask Gemini to analyze the context of the text
+  const prompt = `
+    Analyze this gig worker review: "${comment}".
+    The base rating is ${rawRating}/5. 
+    Did they mention the worker being late? Did they mention a no-show? Was the attitude exceptional?
+    Calculate a 'reliability_modifier' between -1.0 (terrible/no-show) and +0.5 (exceptional/early).
+    Return ONLY JSON: { "modifier": number, "tags": string[], "isNoShow": boolean }
+  `;
+
+  const aiResponse = await ai.models.generateContent({
+    model: 'gemini-2.5-flash',
+    contents: prompt,
+    config: { responseMimeType: "application/json" }
+  });
+
+  const analysis = JSON.parse(aiResponse.text);
+
+  // 2. Save the review
+  await supabase.from('reviews').insert({
+    application_id: applicationId,
+    reviewer_id: employerId,
+    target_id: workerId,
+    rating: rawRating,
+    comment: comment,
+    ai_sentiment_score: analysis.modifier
+  });
+
+  // 3. Update the Worker's Reliability Score in Database
+  // Fetch current score, apply the modifier math, and update
+  const { data: profile } = await supabase.from('profiles').select('*').eq('id', workerId).single();
+  
+  let newScore = Math.min(5.0, Math.max(1.0, Number(profile.reliability_score) + analysis.modifier));
+  let newNoShowCount = analysis.isNoShow ? profile.no_show_count + 1 : profile.no_show_count;
+
+  await supabase.from('profiles').update({
+    reliability_score: newScore,
+    no_show_count: newNoShowCount,
+    completed_shifts: profile.completed_shifts + 1
+  }).eq('id', workerId);
+}
+
+export async function triggerEmergencyBackup(gigId: string, gigLat: number, gigLng: number, gigDescription: string) {
+  // 1. Get all workers who are ready for backup
+  const { data: readyWorkers } = await supabase
+    .from('profiles')
+    .select('id, full_name, reliability_score, location_lat, location_lng')
+    .eq('role', 'worker')
+    .eq('is_backup_ready', true)
+    .gt('reliability_score', 4.0); // Only trust reliable workers for emergencies
+
+  // 2. Filter workers within ~5km (Basic bounding box or haversine formula)
+  const nearbyWorkers = readyWorkers.filter(w => {
+     // Implement simple distance check between (w.location_lat, w.location_lng) and (gigLat, gigLng)
+     return true; // Assume true for this example
+  });
+
+  if (nearbyWorkers.length === 0) return null;
+
+  // 3. Use AI to pick the BEST candidate from the nearby pool
+  const prompt = `
+    A worker just canceled a gig. We need an emergency replacement.
+    Gig Description: "${gigDescription}"
+    
+    Here is the JSON list of available nearby workers:
+    ${JSON.stringify(nearbyWorkers)}
+    
+    Based on their reliability score and the gig needs, pick the single best worker to dispatch.
+    Return ONLY JSON: { "selectedWorkerId": "uuid", "reason": "Why they were chosen" }
+  `;
+
+  const aiResponse = await ai.models.generateContent({
+    model: 'gemini-2.5-flash',
+    contents: prompt,
+    config: { responseMimeType: "application/json" }
+  });
+
+  const result = JSON.parse(aiResponse.text);
+  
+  // 4. In a real app, you would insert a notification record here to alert the chosen worker
+  return result; 
+}
 
 export const api = {
   // 1. GET ALL GIGS
