@@ -29,11 +29,12 @@ interface EmployerDashboardViewProps {
   gigs: Gig[];
   onAddGig: (gig: Gig) => void;
 }
-const [isFindingBackup, setIsFindingBackup] = useState(false);
-const [aiBackupChoice, setAiBackupChoice] = useState<any>(null);
+
 
 
 export default function EmployerDashboardView({ onNavigate, gigs, onAddGig }: EmployerDashboardViewProps) {
+  const [isFindingBackup, setIsFindingBackup] = useState(false);
+  const [aiBackupChoice, setAiBackupChoice] = useState<any>(null);
   const [applicants, setApplicants] = useState<Applicant[]>(initialApplicants); //
   const [backupPool, setBackupPool] = useState(initialBackupWorkers); //
   const [selectedApplicant, setSelectedApplicant] = useState<Applicant | null>(null); //
