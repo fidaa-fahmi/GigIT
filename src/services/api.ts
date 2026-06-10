@@ -1,6 +1,10 @@
+// services/api.ts - Updated with supabase export
 import { supabase } from '../supabaseClient';
 import { Gig, Applicant } from '../types';
 import { GoogleGenAI } from '@google/genai';
+
+// Re-export supabase for use in other components
+export { supabase };
 
 const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
 
@@ -13,7 +17,7 @@ export async function verifyStudentIdWithAI(imageBase64: string) {
   `;
 
   const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash',
+    model: 'gemini-2.0-flash-exp',
     contents: [
       { text: prompt },
       { inlineData: { data: imageBase64.split(',')[1], mimeType: 'image/jpeg' } }
@@ -34,8 +38,8 @@ export async function verifyStudentIdWithAI(imageBase64: string) {
   
   return result;
 }
+
 export async function submitGigReviewWithAI(rawRating: number, comment: string) {
-  // 1. Ask Gemini to analyze the context of the text
   const prompt = `
     Analyze this gig worker review: "${comment}".
     The base rating is ${rawRating}/5. 
@@ -45,17 +49,15 @@ export async function submitGigReviewWithAI(rawRating: number, comment: string) 
   `;
 
   const aiResponse = await ai.models.generateContent({
-    model: 'gemini-2.5-flash',
+    model: 'gemini-2.0-flash-exp',
     contents: prompt,
     config: { responseMimeType: "application/json" }
   });
 
-  // Just return the AI's math, we won't save to Supabase for the pitch
   return JSON.parse(aiResponse.text);
 }
 
 export async function triggerEmergencyBackup(gigDescription: string, nearbyWorkers: any[]) {
-  // 3. Use AI to pick the BEST candidate from the provided dummy pool
   const prompt = `
     A worker just canceled a gig. We need an emergency replacement.
     Gig Description: "${gigDescription}"
@@ -68,7 +70,7 @@ export async function triggerEmergencyBackup(gigDescription: string, nearbyWorke
   `;
 
   const aiResponse = await ai.models.generateContent({
-    model: 'gemini-2.5-flash',
+    model: 'gemini-2.0-flash-exp',
     contents: prompt,
     config: { responseMimeType: "application/json" }
   });
@@ -77,9 +79,6 @@ export async function triggerEmergencyBackup(gigDescription: string, nearbyWorke
 }
 
 export const api = {
-  // 1. GET ALL GIGS
-  // FIX: Added coords.lat / coords.lng mapping so Leaflet map pins work.
-  // The DB stores coords as a JSON object; we map it explicitly here.
   async getGigs(): Promise<Gig[]> {
     const { data, error } = await supabase
       .from('gigs')
@@ -105,8 +104,6 @@ export const api = {
       description: gig.description,
       tags: gig.tags ?? [],
       imageUrl: gig.image_url,
-      // FIX: coords from DB may be stored as { lat, lng, x, y } or a subset.
-      // We provide safe defaults so map pins never crash.
       coords: {
         x: gig.coords?.x ?? 50,
         y: gig.coords?.y ?? 50,
@@ -116,57 +113,67 @@ export const api = {
     }));
   },
 
-  // 2. CREATE A NEW GIG (Insert data to Database)
-  // FIX: coords now persists lat/lng so new gigs show on the map correctly.
-  async createGig(gig: Omit<Gig, 'id'>): Promise<Gig> {
-    const { data, error } = await supabase
-      .from('gigs')
-      .insert([
-        {
-          title: gig.title,
-          employer: gig.employer,
-          location_name: gig.locationName,
-          distance: gig.distance,
-          rate: gig.rate,
-          period: gig.period,
-          category: gig.category,
-          is_instant: gig.isInstant,
-          duration: gig.duration,
-          description: gig.description,
-          tags: gig.tags,
-          image_url: gig.imageUrl,
-          coords: gig.coords,
+  async createGig(gig: any): Promise<Gig> {
+    try {
+      // Only include fields that exist in the database
+      const gigData: any = {
+        title: gig.title,
+        employer: gig.employer,
+        rate: gig.rate,
+        category: gig.category,
+      };
+      
+      // Add optional fields only if they exist in the database
+      if (gig.employer_id) gigData.employer_id = gig.employer_id;
+      if (gig.employer_name) gigData.employer_name = gig.employer_name;
+      if (gig.locationName) gigData.location_name = gig.locationName;
+      if (gig.distance) gigData.distance = gig.distance;
+      if (gig.period) gigData.period = gig.period;
+      if (gig.duration) gigData.duration = gig.duration;
+      if (gig.description) gigData.description = gig.description;
+      if (gig.tags && gig.tags.length > 0) gigData.tags = gig.tags;
+      if (gig.coords) gigData.coords = gig.coords;
+      if (gig.status) gigData.status = gig.status;
+      
+      console.log('Inserting gig with data:', gigData);
+      
+      const { data, error } = await supabase
+        .from('gigs')
+        .insert([gigData])
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Supabase insert error details:', error);
+        throw new Error(error.message);
+      }
+
+      return {
+        id: data.id,
+        title: data.title,
+        employer: data.employer,
+        locationName: data.location_name || '',
+        distance: data.distance ?? '',
+        rate: data.rate,
+        period: data.period || 'Hour',
+        category: data.category,
+        isInstant: data.is_instant ?? false,
+        duration: data.duration,
+        description: data.description,
+        tags: data.tags ?? [],
+        imageUrl: data.image_url,
+        coords: {
+          x: data.coords?.x ?? 50,
+          y: data.coords?.y ?? 50,
+          lat: data.coords?.lat ?? 6.0367,
+          lng: data.coords?.lng ?? 116.1186,
         },
-      ])
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    return {
-      id: data.id,
-      title: data.title,
-      employer: data.employer,
-      locationName: data.location_name,
-      distance: data.distance ?? '',
-      rate: data.rate,
-      period: data.period,
-      category: data.category,
-      isInstant: data.is_instant ?? false,
-      duration: data.duration,
-      description: data.description,
-      tags: data.tags ?? [],
-      imageUrl: data.image_url,
-      coords: {
-        x: data.coords?.x ?? 50,
-        y: data.coords?.y ?? 50,
-        lat: data.coords?.lat ?? 6.0367,
-        lng: data.coords?.lng ?? 116.1186,
-      },
-    };
+      };
+    } catch (err) {
+      console.error('createGig error:', err);
+      throw err;
+    }
   },
-
-  // 3. GET APPLICANTS FOR A SPECIFIC GIG
   async getApplicantsForGig(gigId: string): Promise<Applicant[]> {
     const { data, error } = await supabase
       .from('applicants')
@@ -177,8 +184,6 @@ export const api = {
     return data ?? [];
   },
 
-  // 4. UPDATE APPLICANT STATUS (e.g., Hiring someone on Dashboard)
-  // FIX: This was defined but never called. EmployerDashboardView now calls it.
   async updateApplicantStatus(
     applicantId: string,
     status: 'Pending' | 'Hired' | 'Messaged'

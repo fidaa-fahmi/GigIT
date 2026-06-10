@@ -391,7 +391,7 @@ export default function WorkerBrowseView({
                     {selectedCategory !== 'All Types' && <span> in {selectedCategory}</span>}
                   </p>
 
-                  {/* Gig cards (friend's card layouts + my detail modal trigger + my applied state) */}
+                  {/* Gig cards  */}
                   <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-6">
                     {filteredGigs.map(g => {
                       const isFeatured = g.id === 'gig-1';

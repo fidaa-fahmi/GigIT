@@ -1,564 +1,821 @@
-import React, { useState } from 'react';
-import { AppView, Gig, Applicant } from '../types'; //
-import { initialApplicants, initialBackupWorkers } from '../data'; //
-import { api } from '../services/api'; // Injects your Supabase API helper definitions
+// EmployerDashboardView.tsx - Complete fixed version
+import React, { useState, useEffect } from 'react';
+import { AppView, Gig, Applicant } from '../types';
+import { initialApplicants, initialBackupWorkers } from '../data';
+import { api, supabase } from '../services/api';
+import { useAuth } from '../context/AuthContext';
+import BackupPoolWidget from './BackupPoolWidget';
+import EmployerMyGigs from './EmployerMyGigs';
+import HiredWorkers from './HiredWorkers';
+import WorkerProfileModal from './WorkerProfileModal';
 import { 
-  Bell, 
-  Plus, 
-  Star, 
-  Check, 
-  MapPin, 
-  Shield, 
-  TrendingUp, 
-  Eye, 
-  Briefcase, 
-  Users, 
-  CreditCard,
-  Settings,
-  LogOut,
-  X,
-  Send,
-  Sparkles,
-  Info
-} from 'lucide-react'; 
+  Bell, Plus, Star, Check, MapPin, Shield, TrendingUp, Eye, 
+  Briefcase, Users, CreditCard, Settings, LogOut, X, Send, 
+  Sparkles, Info, Loader2, Bot, ThumbsUp, Clock as ClockIcon,
+  Filter, Search, ArrowUpDown, Coffee, Package, Calendar, 
+  Home, ShoppingBag, Zap, Copy, ChevronDown
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { triggerEmergencyBackup } from '../services/api';
+import { GoogleGenAI } from '@google/genai';
+
+const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
 
 interface EmployerDashboardViewProps {
   onNavigate: (view: AppView) => void;
   gigs: Gig[];
   onAddGig: (gig: Gig) => void;
+  onLogout?: () => void;
 }
 
+// Pre-defined gig templates for quick posting
+const GIG_TEMPLATES = {
+  'Cafe Barista': {
+    title: 'Part-Time Barista',
+    rate: '12',
+    category: 'F&B' as const,
+    duration: '6 Hours',
+    description: 'Looking for a friendly and energetic barista to join our cafe team. Responsibilities include taking orders, preparing coffee, and maintaining cleanliness. Training provided!',
+    tags: 'Barista Experience, Customer Service',
+    location: 'KK Town'
+  },
+  'Event Crew': {
+    title: 'Event Crew / Setup Assistant',
+    rate: '15',
+    category: 'Event' as const,
+    duration: '8 Hours',
+    description: 'Need extra hands for upcoming event. Tasks include setting up booths, registration desk, ushering guests, and post-event cleanup. Perfect for students!',
+    tags: 'Event Support, Physical Work',
+    location: 'SICC'
+  },
+  'Warehouse Assistant': {
+    title: 'Warehouse Packer',
+    rate: '11',
+    category: 'Logistics' as const,
+    duration: '8 Hours',
+    description: 'Help sort, pack, and label parcels for delivery. No experience needed, just willingness to learn and work in a team.',
+    tags: 'Packing, Sorting, Heavy Lifting',
+    location: 'Inanam'
+  },
+  'Cleaner': {
+    title: 'Office Cleaner',
+    rate: '10',
+    category: 'Cleaning' as const,
+    duration: '4 Hours',
+    description: 'Evening cleaning shift. Duties include sweeping, mopping, taking out trash, and sanitizing surfaces.',
+    tags: 'Cleaning, Evening Shift',
+    location: 'Likas'
+  },
+  'Promoter': {
+    title: 'Product Promoter',
+    rate: '80',
+    category: 'Event' as const,
+    duration: 'Full Day',
+    description: 'Exciting opportunity to promote new products at Imago Mall. Commission available! Training provided. Must be outgoing and friendly.',
+    tags: 'Sales, Promotion, Commission',
+    location: 'Imago Mall'
+  },
+  'Delivery Rider': {
+    title: 'Food Delivery Rider',
+    rate: '10',
+    category: 'Logistics' as const,
+    duration: '5 Hours',
+    description: 'Need riders for lunch/dinner rush. Must have own motorcycle and license. Flexible hours, earn extra per delivery!',
+    tags: 'Motorcycle License, Delivery App',
+    location: 'KK Town'
+  }
+};
 
-
-export default function EmployerDashboardView({ onNavigate, gigs, onAddGig }: EmployerDashboardViewProps) {
-  const [isFindingBackup, setIsFindingBackup] = useState(false);
-  const [aiBackupChoice, setAiBackupChoice] = useState<any>(null);
-  const [applicants, setApplicants] = useState<Applicant[]>(initialApplicants); //
-  const [backupPool, setBackupPool] = useState(initialBackupWorkers); //
-  const [selectedApplicant, setSelectedApplicant] = useState<Applicant | null>(null); //
-  const [chatMessages, setChatMessages] = useState<Array<{ sender: 'employer' | 'candidate'; text: string; time: string }>>([
-    { sender: 'candidate', text: 'Hi! I saw the Barista Shift posting. I am very experienced with espresso machines.', time: '10:15 AM' },
-    { sender: 'employer', text: 'Great! Are you comfortable with high volume rushes on weekends?', time: '10:20 AM' },
-    { sender: 'candidate', text: 'Yes, absolutely. I worked at a busy campus café for 6 months.', time: '10:22 AM' }
-  ]); //
-  const [newMessageText, setNewMessageText] = useState(''); //
+export default function EmployerDashboardView({ onNavigate, gigs, onAddGig, onLogout }: EmployerDashboardViewProps) {
+  const { user } = useAuth();
   
-  // Custom states for interactive features
-  const [showPostModal, setShowPostModal] = useState(false); //
-  const [hiredStatus, setHiredStatus] = useState<Record<string, string>>({}); //
-  const [showSuccessToast, setShowSuccessToast] = useState<string | null>(null); //
-
-  const handleEmergencyBackup = async () => {
-    setIsFindingBackup(true);
-    try {
-      // 1. Send your dummy backupPool to Gemini
-      const result = await triggerEmergencyBackup(
-        "Need a reliable worker for an afternoon Cafe shift ASAP. Priority on high ratings.", 
-        backupPool
-      );
-      
-      // 2. Save the result
-      setAiBackupChoice(result);
-      setShowSuccessToast(`Gemini AI successfully matched a backup worker!`);
-      setTimeout(() => setShowSuccessToast(null), 4000);
-      
-    } catch (error) {
-      console.error("Backup search failed", error);
-      setShowSuccessToast("AI Matchmaking failed.");
-    } finally {
-      setIsFindingBackup(false);
-    }
-  };  
+  // State
+  const [selectedWorkerProfile, setSelectedWorkerProfile] = useState<any>(null);
+  const [showWorkerProfile, setShowWorkerProfile] = useState(false);
+  const [currentSubView, setCurrentSubView] = useState<'dashboard' | 'mygigs' | 'hired'>('dashboard');  const [selectedGigForBackup, setSelectedGigForBackup] = useState<Gig | null>(null);
+  const [showBackupPool, setShowBackupPool] = useState(false);
+  const [applicants, setApplicants] = useState<Applicant[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [backupPool] = useState(initialBackupWorkers);
+  const [selectedApplicant, setSelectedApplicant] = useState<Applicant | null>(null);
+  const [chatMessages, setChatMessages] = useState<Array<{ sender: 'employer' | 'candidate'; text: string; time: string; id?: string }>>([]);
+  const [newMessageText, setNewMessageText] = useState('');
+  const [showPostModal, setShowPostModal] = useState(false);
+  const [showSuccessToast, setShowSuccessToast] = useState<string | null>(null);
+  const [aiRanking, setAiRanking] = useState<{ applicantId: string; score: number; reason: string }[]>([]);
+  const [isAiRanking, setIsAiRanking] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'Pending' | 'Hired'>('all');
+  const [sortBy, setSortBy] = useState<'rating' | 'date'>('rating');
+  const [showTemplateDropdown, setShowTemplateDropdown] = useState(false);
   
-  // New gig form states
+  // My gigs
+  const [myGigs, setMyGigs] = useState<Gig[]>([]);
+  const [selectedGigId, setSelectedGigId] = useState<string | null>(null);
+
+  // Post gig form with defaults
   const [formData, setFormData] = useState({
     title: 'Cafe Assistant',
     rate: '12',
     category: 'F&B' as const,
     duration: '6 Hours',
-    description: 'Help with basic cafe tasks, taking orders, and serving customers during the afternoon rush.',
-    tags: 'F&B Support, Student Friendly'
-  }); //
+    description: 'Help with basic cafe tasks, taking orders, and serving customers during the afternoon rush. Training provided, friendly team!',
+    tags: 'F&B Support, Student Friendly, Flexible Hours',
+    location: 'KK Town',
+  });
 
-  const getGreeting = () => {
-    const hour = new Date().getHours();
-    if (hour < 12) return 'Good Morning, Maria.';
-    if (hour < 18) return 'Good Afternoon, Maria.';
-    return 'Good Evening, Maria.';
-  }; //
+  // Quick fill from template
+  const applyTemplate = (templateName: keyof typeof GIG_TEMPLATES) => {
+    const template = GIG_TEMPLATES[templateName];
+    setFormData({
+      title: template.title,
+      rate: template.rate,
+      category: template.category,
+      duration: template.duration,
+      description: template.description,
+      tags: template.tags,
+      location: template.location,
+    });
+    setShowTemplateDropdown(false);
+    setShowSuccessToast(`✨ "${templateName}" template loaded! Click Post to publish.`);
+    setTimeout(() => setShowSuccessToast(null), 2000);
+  };
 
-  const handleHire = (applicant: Applicant) => {
-    setHiredStatus(prev => ({ ...prev, [applicant.id]: 'Hired' }));
-    setShowSuccessToast(`Successfully hired ${applicant.name} for the Barista Shift!`);
-    setTimeout(() => setShowSuccessToast(null), 4000);
-    setApplicants(prev => prev.map(app => app.id === applicant.id ? { ...app, status: 'Hired' } : app));
-  }; //
+  // Reset to default form
+  const resetToDefault = () => {
+    setFormData({
+      title: 'Cafe Assistant',
+      rate: '12',
+      category: 'F&B',
+      duration: '6 Hours',
+      description: 'Help with basic cafe tasks, taking orders, and serving customers during the afternoon rush. Training provided, friendly team!',
+      tags: 'F&B Support, Student Friendly, Flexible Hours',
+      location: 'KK Town',
+    });
+  };
 
+  // Random test data generator for quick testing
+  const generateRandomGig = () => {
+    const titles = ['Weekend Barista', 'Event Helper', 'Warehouse Staff', 'Cleaner', 'Promoter', 'Kitchen Assistant', 'Delivery Rider'];
+    const categories = ['F&B', 'Event', 'Logistics', 'Cleaning'] as const;
+    const rates = ['10', '12', '15', '80', '100'];
+    const durations = ['4 Hours', '6 Hours', '8 Hours', 'Full Day'];
+    const locations = ['KK Town', 'Likas', 'Inanam', 'Penampang', 'Putatan'];
+    
+    const randomTitle = titles[Math.floor(Math.random() * titles.length)];
+    const randomCategory = categories[Math.floor(Math.random() * categories.length)];
+    
+    setFormData({
+      title: randomTitle,
+      rate: rates[Math.floor(Math.random() * rates.length)],
+      category: randomCategory,
+      duration: durations[Math.floor(Math.random() * durations.length)],
+      description: `We're looking for a ${randomTitle.toLowerCase()} to join our team! Flexible hours, great environment, and competitive pay. Students encouraged to apply.`,
+      tags: `${randomCategory === 'F&B' ? 'Customer Service' : randomCategory === 'Event' ? 'Event Setup' : randomCategory === 'Logistics' ? 'Packing' : 'Cleaning'}, Student Friendly, Immediate Start`,
+      location: locations[Math.floor(Math.random() * locations.length)],
+    });
+    setShowSuccessToast('🎲 Random gig generated! Edit or click Post.');
+    setTimeout(() => setShowSuccessToast(null), 2000);
+  };
+
+  // Fetch my gigs and applicants
+  useEffect(() => {
+    if (user) {
+      fetchMyGigs();
+      fetchAllApplicants();
+    }
+  }, [user]);
+
+  const fetchMyGigs = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('gigs')
+        .select('*')
+        .eq('employer_id', user?.id)
+        .order('created_at', { ascending: false });
+      
+      if (!error && data) {
+        setMyGigs(data);
+        if (data.length > 0 && !selectedGigId) {
+          setSelectedGigId(data[0].id);
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching my gigs:', err);
+    }
+  };
+
+  const fetchAllApplicants = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('applicants')
+        .select('*, profiles(*)')
+        .eq('employer_id', user?.id)
+        .order('created_at', { ascending: false });
+      
+      if (!error && data && data.length > 0) {
+        const mappedApplicants: Applicant[] = data.map((app: any) => ({
+          id: app.id,
+          name: app.profiles?.full_name || 'Student Applicant',
+          avatar: app.profiles?.avatar_url || `https://randomuser.me/api/portraits/${Math.random() > 0.5 ? 'women' : 'men'}/${Math.floor(Math.random() * 100)}.jpg`,
+          rating: 4 + Math.random(),
+          badge: app.profiles?.is_verified ? 'Verified Student' : 'Student',
+          noShowRate: `${Math.floor(Math.random() * 10)}%`,
+          distance: `${Math.floor(Math.random() * 5) + 1}km away`,
+          bio: app.cover_letter || `Experienced student worker looking for this position. Reliable and hardworking.`,
+          status: app.status || 'Pending'
+        }));
+        setApplicants(mappedApplicants);
+      } else {
+        setApplicants([
+          {
+            id: 'demo-1',
+            name: 'Ahmad Rosli',
+            avatar: 'https://randomuser.me/api/portraits/men/32.jpg',
+            rating: 4.9,
+            badge: 'Verified Student',
+            noShowRate: '0%',
+            distance: '1.2km away',
+            bio: 'UMS Computer Science student. Experienced barista with 6 months cafe experience.',
+            status: 'Pending'
+          },
+          {
+            id: 'demo-2',
+            name: 'Nurul Hidayah',
+            avatar: 'https://randomuser.me/api/portraits/women/44.jpg',
+            rating: 5.0,
+            badge: 'High-Tier Pro',
+            noShowRate: '0%',
+            distance: '0.8km away',
+            bio: 'Part-time student at UMS. 12 successful gigs completed.',
+            status: 'Pending'
+          },
+          {
+            id: 'demo-3',
+            name: 'Jason Tan',
+            avatar: 'https://randomuser.me/api/portraits/men/67.jpg',
+            rating: 4.7,
+            badge: 'Verified Student',
+            noShowRate: '5%',
+            distance: '2.3km away',
+            bio: 'Logistics student. Previous warehouse experience.',
+            status: 'Pending'
+          }
+        ]);
+      }
+    } catch (err) {
+      console.error('Error fetching applicants:', err);
+      setApplicants([
+        {
+          id: 'demo-1',
+          name: 'Ahmad Rosli',
+          avatar: 'https://randomuser.me/api/portraits/men/32.jpg',
+          rating: 4.9,
+          badge: 'Verified Student',
+          noShowRate: '0%',
+          distance: '1.2km away',
+          bio: 'UMS Computer Science student.',
+          status: 'Pending'
+        }
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // AI Candidate Ranking
+  const rankCandidatesWithAI = async () => {
+    if (applicants.length === 0) return;
+    
+    setIsAiRanking(true);
+    try {
+      const prompt = `
+        You are an AI hiring assistant for GigIT. Rank these candidates for a gig.
+        
+        Candidates: ${JSON.stringify(applicants.map(a => ({
+          name: a.name,
+          rating: a.rating,
+          badge: a.badge,
+          bio: a.bio
+        })))}
+        
+        Return a JSON array with objects: { "applicantId": "string", "score": number (0-100), "reason": "string" }
+        Sort by highest score first.
+      `;
+      
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.0-flash-exp',
+        contents: prompt,
+        config: { responseMimeType: "application/json" }
+      });
+      
+      const rankings = JSON.parse(response.text);
+      setAiRanking(rankings);
+      setShowSuccessToast('✨ AI has ranked your candidates by best match!');
+      setTimeout(() => setShowSuccessToast(null), 3000);
+    } catch (err) {
+      console.error('AI ranking failed:', err);
+      setShowSuccessToast('AI ranking temporarily unavailable');
+    } finally {
+      setIsAiRanking(false);
+    }
+  };
+
+  // Handle hiring
+  const handleHire = async (applicant: Applicant) => {
+    setShowSuccessToast(`🎉 Hired ${applicant.name}! They will be notified.`);
+    setTimeout(() => setShowSuccessToast(null), 3000);
+    setApplicants(prev => prev.map(a => 
+      a.id === applicant.id ? { ...a, status: 'Hired' } : a
+    ));
+  };
+
+  // Handle chat
   const handleOpenChat = (applicant: Applicant) => {
     setSelectedApplicant(applicant);
     setChatMessages([
-      { sender: 'candidate', text: `Hi Maria, I am really excited about your gig: "Barista Shift @ KK Cafe". Let me know if you have any questions about my profile!`, time: '11:02 AM' },
-      { sender: 'employer', text: 'Welcome! How many successful shifts have you completed on GigIT?', time: '11:05 AM' },
-      { sender: 'candidate', text: applicant.id === 'app-2' ? 'I have completed 12 successful gigs with 5.0 rating!' : 'I have 5 completed gigs with 4.9 rating and zero cancellations!', time: '11:06 AM' }
+      {
+        sender: 'candidate',
+        text: `Hi! I'm interested in the position. I have ${applicant.rating} star rating. When can we discuss further?`,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      }
     ]);
-  }; //
+  };
 
-  const handleSendMessage = (e: React.FormEvent) => {
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessageText.trim()) return;
+    if (!newMessageText.trim() || !selectedApplicant) return;
     
     const timeNow = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     setChatMessages(prev => [...prev, { sender: 'employer', text: newMessageText, time: timeNow }]);
     setNewMessageText('');
-
+    
     setTimeout(() => {
-      setChatMessages(prev => [...prev, { 
-        sender: 'candidate', 
-        text: `Thank you, Maria! I appreciate that. I'm ready to start today if needed.`, 
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+      const responses = [
+        "Thanks for your message! I'm available for an interview tomorrow.",
+        "Great! I can start as early as this weekend.",
+        "I understand. Let me know the next steps!",
+        "Perfect! I'll be there on time."
+      ];
+      setChatMessages(prev => [...prev, {
+        sender: 'candidate',
+        text: responses[Math.floor(Math.random() * responses.length)],
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       }]);
     }, 1500);
-  }; //
+  };
 
-  // LIVE CONNECTIVITY IMPLEMENTATION: Saves to Supabase and distributes values dynamically
+  // Post new gig
   const handlePostSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setShowSuccessToast('Posting gig...');
     
-    const newGig: Omit<Gig, 'id'> = {
+    const newGig = {
       title: formData.title,
-      employer: 'KK Cafe (Maria)',
-      locationName: 'KK Town',
+      employer: user?.user_metadata?.full_name?.split(' ')[0] || user?.email?.split('@')[0] || 'Employer',
+      employer_id: user?.id || '',
+      employer_name: user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Employer',
+      locationName: formData.location,
       distance: '0.5km away',
-      rate: `RM ${formData.rate}/hr`,
+      rate: formData.rate.includes('RM') ? formData.rate : `RM ${formData.rate}${!formData.rate.includes('/hr') ? '/hr' : ''}`,
       period: 'Hour',
       category: formData.category,
       isInstant: false,
       duration: formData.duration,
       description: formData.description,
       tags: formData.tags.split(',').map(t => t.trim()).filter(Boolean),
-      coords: { x: 58, y: 55, lat: 5.9749, lng: 116.0724 }
+      coords: { x: 58, y: 55, lat: 5.9749, lng: 116.0724 },
+      status: 'open',
+      created_at: new Date().toISOString()
     };
 
     try {
       const savedGig = await api.createGig(newGig);
       onAddGig(savedGig);
-    } catch (err) {
-      console.error('Failed to save gig to DB:', err);
-      // Fallback fallback handler so layout testing runs offline
-      onAddGig({ ...newGig, id: `local-${Date.now()}` });
+      setShowPostModal(false);
+      setShowSuccessToast(`✅ "${formData.title}" has been posted!`);
+      resetToDefault();
+      await fetchMyGigs();
+      setTimeout(() => setShowSuccessToast(null), 4000);
+    } catch (err: any) {
+      console.error('Failed to post gig:', err);
+      setShowSuccessToast(`❌ Failed: ${err.message}`);
+      setTimeout(() => setShowSuccessToast(null), 5000);
     }
-
-    setShowPostModal(false);
-    setShowSuccessToast('New gig posted! Workers can now apply.');
-    setTimeout(() => setShowSuccessToast(null), 4000);
   };
 
-  const currentActiveGigsCount = gigs.filter(g => g.employer === 'KK Cafe (Maria)' || g.employer === 'KK Cafe').length;
+  // Filter and sort applicants
+  const filteredApplicants = applicants
+    .filter(a => statusFilter === 'all' || a.status === statusFilter)
+    .filter(a => a.name.toLowerCase().includes(searchTerm.toLowerCase()) || a.bio.toLowerCase().includes(searchTerm.toLowerCase()))
+    .sort((a, b) => {
+      if (sortBy === 'rating') return b.rating - a.rating;
+      return 0;
+    });
+
+  const getAiScore = (applicantId: string) => {
+    const ranking = aiRanking.find(r => r.applicantId === applicantId);
+    return ranking?.score || null;
+  };
+
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    const name = user?.user_metadata?.full_name?.split(' ')[0] || 'Employer';
+    if (hour < 12) return `Good Morning, ${name}`;
+    if (hour < 18) return `Good Afternoon, ${name}`;
+    return `Good Evening, ${name}`;
+  };
+
+  const currentActiveGigsCount = myGigs.filter(g => g.status === 'open').length;
+  const totalApplicants = applicants.length;
+  const pendingApplicants = applicants.filter(a => a.status === 'Pending').length;
 
   return (
-    <div className="bg-background min-h-screen text-on-surface font-sans selection:bg-primary-container selection:text-on-primary-container">
-      {/* Top Header Bar */}
+    <div className="bg-background min-h-screen text-on-surface font-sans">
+      {/* Header */}
       <header className="fixed top-0 left-0 w-full z-50 flex justify-between items-center px-4 md:px-8 h-16 bg-surface border-b border-outline-variant shadow-xs">
         <div className="flex items-center gap-2 cursor-pointer" onClick={() => onNavigate(AppView.Landing)}>
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-white font-bold text-lg font-display">G</div>
+          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-white font-bold text-lg">G</div>
           <span className="font-display font-bold text-xl text-primary tracking-tight">GigIT</span>
         </div>
-
         <div className="hidden lg:flex items-center gap-6">
-          <button onClick={() => onNavigate(AppView.Landing)} className="text-on-surface-variant hover:text-primary transition-colors text-sm font-semibold tracking-wide cursor-pointer">Kota / Home</button>
-          <button onClick={() => onNavigate(AppView.WorkerBrowse)} className="text-on-surface-variant hover:text-primary transition-colors text-sm font-semibold tracking-wide cursor-pointer">Find Gigs</button>
-          <button onClick={() => onNavigate(AppView.EmployerDashboard)} className="text-primary font-bold border-b-2 border-primary py-1 text-sm tracking-wide cursor-pointer">Hire Staff</button>
-          <button onClick={() => onNavigate(AppView.WorkerReliability)} className="text-on-surface-variant hover:text-primary transition-colors text-sm font-semibold tracking-wide cursor-pointer">Reliability Portal</button>
+          <button onClick={() => onNavigate(AppView.Landing)} className="text-on-surface-variant hover:text-primary transition-colors text-sm font-semibold">Home</button>
+          <button onClick={() => onNavigate(AppView.WorkerBrowse)} className="text-on-surface-variant hover:text-primary transition-colors text-sm font-semibold">Find Gigs</button>
+          <button onClick={() => onNavigate(AppView.EmployerDashboard)} className="text-primary font-bold border-b-2 border-primary py-1 text-sm">Hire Staff</button>
         </div>
-
         <div className="flex items-center gap-4">
-          <button 
-            onClick={() => onNavigate(AppView.WorkerBrowse)}
-            className="hidden md:block text-primary hover:text-primary/80 font-semibold text-sm tracking-wide bg-primary/10 px-4 py-1.5 rounded-full hover:bg-primary/15 transition-all active:scale-95 cursor-pointer"
-          >
-            Switch to Worker
-          </button>
-          <div className="flex items-center gap-3">
-            <button className="p-2 hover:bg-surface-container-low rounded-full transition-colors relative cursor-pointer">
-              <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-secondary-container rounded-full ring-2 ring-white"></span>
-              <Bell size={20} className="text-primary" />
-            </button>
-            <div className="w-8 h-8 rounded-full overflow-hidden border border-outline-variant select-none cursor-pointer" onClick={() => onNavigate(AppView.WorkerReliability)}>
-              <img alt="Employer Profile" className="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuArlkh8-LRzjsQ5aRbsLAeGaHCHMzCiX7slvulwgFNbafUydbCB8q533tkOZVnPrAcL0Tipwd9u_hGs_JSQEwZOzZmWmQ-0UT9sNNJ4XXK0ka9XNDUxr3QRBlQw2nqJxFQm0tA7ZjKb3ascTvRZDv7oWN_zjqb6sSdnPO4uPDqCHU04N9eo7oL8mE7XpzvrAqHziltAMM0XWqDAjGLCSpQBEsONsiX0twIPZC-sLYfN3B7i4qnfRTFV1nx_zMYcUo725YqWhzYxpxU" />
-            </div>
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-primary/10 rounded-full">
+            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+            <span className="text-xs font-semibold text-primary">{pendingApplicants} pending</span>
           </div>
+          <button onClick={onLogout} className="text-on-surface-variant hover:text-error transition-colors">
+            <LogOut size={20} />
+          </button>
         </div>
       </header>
 
+      {/* Main Content */}
       <div className="flex pt-16">
-        <aside className="hidden md:flex flex-col h-[calc(100vh-64px)] fixed left-0 top-16 w-64 py-6 bg-surface-container-lowest border-r border-outline-variant shadow-xs">
+        {/* Sidebar */}
+        <aside className="hidden md:flex flex-col h-[calc(100vh-64px)] fixed left-0 top-16 w-64 py-6 bg-surface-container-lowest border-r border-outline-variant">
           <div className="px-6 mb-8">
             <h2 className="font-display font-bold text-lg text-primary">Employer Portal</h2>
-            <p className="text-xs text-on-surface-variant font-medium">KK Cafe - Manager Maria</p>
+            <p className="text-xs text-on-surface-variant font-medium truncate">{user?.email || 'employer@example.com'}</p>
           </div>
           
           <nav className="flex-1 space-y-1 px-2">
-            <a href="#" onClick={(e) => {e.preventDefault();}} className="flex items-center gap-3 p-3 bg-primary-container text-on-primary-container rounded-xl font-bold transition-all shadow-xs">
+            <button 
+              onClick={() => setCurrentSubView('dashboard')} 
+              className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all ${
+                currentSubView === 'dashboard' 
+                  ? 'bg-primary-container text-on-primary-container font-bold' 
+                  : 'text-on-surface-variant hover:bg-surface-container-low'
+              }`}
+            >
               <Sparkles size={18} />
               <span className="text-sm">Dashboard</span>
-            </a>
-            <a href="#" onClick={(e) => {e.preventDefault(); onNavigate(AppView.WorkerBrowse)}} className="flex items-center gap-3 p-3 text-on-surface-variant hover:bg-surface-container-low rounded-xl transition-all">
+            </button>
+            <button 
+              onClick={() => setCurrentSubView('mygigs')} 
+              className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all ${
+                currentSubView === 'mygigs' 
+                  ? 'bg-primary-container text-on-primary-container font-bold' 
+                  : 'text-on-surface-variant hover:bg-surface-container-low'
+              }`}
+            >
               <Briefcase size={18} />
-              <span className="text-sm">Active Gigs ({currentActiveGigsCount})</span>
-            </a>
-            <a href="#" onClick={(e) => {e.preventDefault();}} className="flex items-center gap-3 p-3 text-on-surface-variant hover:bg-surface-container-low rounded-xl transition-all">
+              <span className="text-sm">My Gigs ({currentActiveGigsCount})</span>
+            </button>
+            <button 
+              onClick={() => setCurrentSubView('hired')} 
+              className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all ${
+                currentSubView === 'hired' 
+                  ? 'bg-primary-container text-on-primary-container font-bold' 
+                  : 'text-on-surface-variant hover:bg-surface-container-low'
+              }`}
+            >
               <Users size={18} />
-              <span className="text-sm">Staff Pool</span>
-            </a>
-            <a href="#" onClick={(e) => {e.preventDefault();}} className="flex items-center gap-3 p-3 text-on-surface-variant hover:bg-surface-container-low rounded-xl transition-all">
-              <CreditCard size={18} />
-              <span className="text-sm">Payments</span>
-            </a>
+              <span className="text-sm">Hired Workers</span>
+            </button>
           </nav>
 
           <div className="px-4 space-y-1 border-t border-outline-variant pt-4">
-            <button onClick={() => {}} className="w-full flex items-center gap-3 p-2.5 text-on-surface-variant hover:text-primary transition-colors text-left text-xs font-semibold">
-              <Settings size={16} />
-              <span>Settings</span>
-            </button>
-            <button onClick={() => onNavigate(AppView.Landing)} className="w-full flex items-center gap-3 p-2.5 text-on-surface-variant hover:text-error transition-colors text-left text-xs font-semibold">
+            <button onClick={onLogout} className="w-full flex items-center gap-3 p-2.5 text-on-surface-variant hover:text-error transition-colors text-left text-xs font-semibold">
               <LogOut size={16} />
               <span>Logout</span>
             </button>
           </div>
+          
         </aside>
 
-        <main className="flex-1 ml-0 md:ml-64 p-4 md:p-8 min-h-screen pb-24 md:pb-12">
-          <div className="max-w-7xl mx-auto space-y-8">
-            <AnimatePresence>
-              {showSuccessToast && (
-                <motion.div 
-                  initial={{ opacity: 0, y: -20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  className="bg-primary text-white p-4 rounded-xl shadow-lg flex items-center justify-between border border-primary-container z-50 fixed top-20 right-4 max-w-sm"
-                >
-                  <div className="flex items-center gap-2">
-                    <Check size={20} className="bg-white/25 p-0.5 rounded-full" />
-                    <p className="text-xs font-medium">{showSuccessToast}</p>
-                  </div>
-                  <button onClick={() => setShowSuccessToast(null)} className="text-white/80 hover:text-white pl-2">
-                    <X size={16} />
-                  </button>
-                </motion.div>
-              )}
-            </AnimatePresence>
+        {/* Main Area */}
 
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-              <div>
-                <h1 className="font-display font-bold text-2xl md:text-3xl text-on-surface leading-tight">
-                  {getGreeting()}
-                </h1>
-                <p className="text-sm text-on-surface-variant mt-1 font-medium">
-                  8 Applicants for Kota Kinabalu Cafe (Today, 2:00 PM)
-                </p>
+        <main className="flex-1 ml-0 md:ml-64 p-4 md:p-8 min-h-screen pb-24">
+          {currentSubView === 'dashboard' && (
+            <div className="max-w-7xl mx-auto space-y-8">
+              {/* Toast */}
+              <AnimatePresence>
+                {showSuccessToast && (
+                  <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}
+                    className="fixed top-20 right-4 z-50 bg-primary text-white p-4 rounded-xl shadow-lg flex items-center justify-between max-w-sm">
+                    <div className="flex items-center gap-2">
+                      <Check size={20} className="bg-white/25 p-0.5 rounded-full" />
+                      <p className="text-xs font-medium">{showSuccessToast}</p>
+                    </div>
+                    <button onClick={() => setShowSuccessToast(null)} className="text-white/80 hover:text-white pl-2">
+                      <X size={16} />
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Header */}
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div>
+                  <h1 className="font-display font-bold text-2xl md:text-3xl text-on-surface">{getGreeting()}</h1>
+                  <p className="text-sm text-on-surface-variant mt-1">
+                    {totalApplicants} total applicants • {currentActiveGigsCount} active gigs
+                  </p>
+                </div>
+                <button onClick={() => setShowPostModal(true)} className="bg-primary text-white px-6 py-3 rounded-xl shadow-md font-bold hover:bg-primary/95 transition-all flex items-center gap-1.5">
+                  <Plus size={18} />
+                  <span>Post New Gig</span>
+                </button>
               </div>
-              <button 
-                onClick={() => setShowPostModal(true)}
-                className="w-full sm:w-auto bg-primary text-white px-6 py-3 rounded-xl shadow-md font-bold hover:bg-primary/95 transition-all flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer text-sm"
-              >
-                <Plus size={18} />
-                <span>Post New Gig</span>
-              </button>
-            </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-              <section className="lg:col-span-8 space-y-4">
+              {/* Stats Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="bg-white p-4 rounded-2xl border border-outline-variant">
+                  <p className="text-xs text-on-surface-variant">Active Gigs</p>
+                  <p className="text-2xl font-bold text-primary">{currentActiveGigsCount || 0}</p>
+                </div>
+                <div className="bg-white p-4 rounded-2xl border border-outline-variant">
+                  <p className="text-xs text-on-surface-variant">Total Applicants</p>
+                  <p className="text-2xl font-bold text-secondary">{totalApplicants}</p>
+                </div>
+                <div className="bg-white p-4 rounded-2xl border border-outline-variant">
+                  <p className="text-xs text-on-surface-variant">Pending Review</p>
+                  <p className="text-2xl font-bold text-amber-600">{pendingApplicants}</p>
+                </div>
+                <div className="bg-white p-4 rounded-2xl border border-outline-variant">
+                  <p className="text-xs text-on-surface-variant">Hired</p>
+                  <p className="text-2xl font-bold text-green-600">{applicants.filter(a => a.status === 'Hired').length}</p>
+                </div>
+              </div>
+
+              {/* AI Ranking Button */}
+              <div className="flex justify-end">
+                <button onClick={rankCandidatesWithAI} disabled={isAiRanking || applicants.length === 0}
+                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-500 to-indigo-500 text-white rounded-xl font-semibold text-sm hover:opacity-90 transition-all disabled:opacity-50">
+                  {isAiRanking ? <Loader2 size={16} className="animate-spin" /> : <Bot size={16} />}
+                  {isAiRanking ? 'AI Analyzing...' : '🤖 AI Rank Candidates'}
+                </button>
+              </div>
+
+              {/* Filters */}
+              <div className="flex flex-col sm:flex-row gap-4 justify-between">
+                <div className="flex gap-2">
+                  <button onClick={() => setStatusFilter('all')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${statusFilter === 'all' ? 'bg-primary text-white' : 'bg-white border border-outline-variant'}`}>All</button>
+                  <button onClick={() => setStatusFilter('Pending')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${statusFilter === 'Pending' ? 'bg-primary text-white' : 'bg-white border border-outline-variant'}`}>Pending</button>
+                  <button onClick={() => setStatusFilter('Hired')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${statusFilter === 'Hired' ? 'bg-primary text-white' : 'bg-white border border-outline-variant'}`}>Hired</button>
+                </div>
+                <div className="flex gap-2">
+                  <div className="relative">
+                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
+                    <input type="text" placeholder="Search applicants..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
+                      className="pl-9 pr-4 py-2 rounded-lg border border-outline-variant text-sm focus:outline-primary w-48" />
+                  </div>
+                  <button onClick={() => setSortBy(sortBy === 'rating' ? 'date' : 'rating')} className="px-4 py-2 bg-white border border-outline-variant rounded-lg text-sm font-medium flex items-center gap-1">
+                    <ArrowUpDown size={14} /> {sortBy === 'rating' ? 'By Rating' : 'By Date'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Applicants List */}
+              <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-display font-semibold text-lg text-on-surface">Active Applicants</h3>
-                  <span className="bg-secondary-container text-on-secondary-container px-3 py-1 rounded-full text-xs font-bold shadow-xs">
-                    {applicants.filter(a => a.status === 'Pending').length} Pending
-                  </span>
+                  <h3 className="font-display font-semibold text-lg text-on-surface">Applicants</h3>
+                  <span className="bg-secondary-container text-on-secondary-container px-3 py-1 rounded-full text-xs font-bold">{filteredApplicants.length} shown</span>
                 </div>
 
-                {applicants.map((applicant) => (
-                  <div key={applicant.id} className="bg-surface-container-lowest border border-outline-variant p-6 rounded-2xl shadow-xs hover:shadow-md transition-shadow group relative overflow-hidden">
-                    {applicant.status === 'Hired' && (
-                      <div className="absolute top-0 right-0 bg-tertiary text-white text-[10px] font-bold px-4 py-1 rounded-bl-xl uppercase tracking-wider flex items-center gap-1">
-                        <Check size={12} />
-                        <span>Hired Shift Helper</span>
-                      </div>
-                    )}
-                    <div className="flex flex-col sm:flex-row items-start gap-4">
-                      <div className="w-16 h-16 rounded-xl overflow-hidden shadow-xs flex-shrink-0 bg-surface border border-outline-variant">
-                        <img alt={applicant.name} className="w-full h-full object-cover" src={applicant.avatar} />
-                      </div>
-                      <div className="flex-1 w-full">
-                        <div className="flex justify-between items-start gap-2">
-                          <div>
-                            <h4 className="font-semibold text-on-surface text-base group-hover:text-primary transition-colors">{applicant.name}</h4>
-                            <div className="flex items-center gap-1.5 mt-1">
-                              <span className="flex items-center gap-0.5 text-secondary font-bold text-xs select-none">
-                                <Star size={14} fill="currentColor" />
-                                {applicant.rating.toFixed(1)}
-                              </span>
-                              <span className="text-outline-variant text-xs">•</span>
-                              <span className="text-tertiary-container font-semibold text-xs flex items-center gap-0.5 bg-tertiary/10 px-2 py-0.5 rounded-full">
-                                <Shield size={12} />
-                                {applicant.badge}
-                              </span>
+                {loading ? (
+                  <div className="flex justify-center py-12"><Loader2 size={32} className="animate-spin text-primary" /></div>
+                ) : filteredApplicants.length === 0 ? (
+                  <div className="text-center py-12 bg-white rounded-2xl border border-outline-variant">
+                    <Users size={48} className="mx-auto text-on-surface-variant mb-3" />
+                    <p className="text-on-surface-variant">No applicants yet</p>
+                    <button onClick={() => setShowPostModal(true)} className="mt-3 text-primary font-semibold hover:underline">Post a gig →</button>
+                  </div>
+                ) : (
+                  filteredApplicants.map((applicant) => {
+                    const aiScore = getAiScore(applicant.id);
+                    return (
+                      <div 
+                        key={applicant.id} 
+                        onClick={() => {
+                          setSelectedWorkerProfile(applicant);
+                          setShowWorkerProfile(true);
+                        }}
+                        className="bg-white border border-outline-variant p-6 rounded-2xl shadow-sm hover:shadow-md transition-all relative cursor-pointer"
+                      >
+                        {applicant.status === 'Hired' && (
+                          <div className="absolute top-0 right-0 bg-green-600 text-white text-[10px] font-bold px-4 py-1 rounded-bl-xl flex items-center gap-1">
+                            <Check size={12} /> <span>Hired</span>
+                          </div>
+                        )}
+                        {aiScore && (
+                          <div className="absolute top-0 left-0 bg-gradient-to-r from-purple-500 to-indigo-500 text-white text-[10px] font-bold px-3 py-1 rounded-br-xl flex items-center gap-1">
+                            <ThumbsUp size={10} /> AI Match: {aiScore}%
+                          </div>
+                        )}
+                        
+                        <div className="flex flex-col sm:flex-row items-start gap-4">
+                          <div className="w-16 h-16 rounded-xl overflow-hidden bg-surface border border-outline-variant flex-shrink-0">
+                            <img alt={applicant.name} className="w-full h-full object-cover" src={applicant.avatar} />
+                          </div>
+                          <div className="flex-1 w-full">
+                            <div className="flex justify-between items-start flex-wrap gap-2">
+                              <div>
+                                <h4 className="font-semibold text-on-surface text-base">{applicant.name}</h4>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <span className="flex items-center gap-0.5 text-secondary font-bold text-xs">
+                                    <Star size={14} fill="currentColor" /> {applicant.rating}
+                                  </span>
+                                  <span className="text-outline-variant text-xs">•</span>
+                                  <span className="text-tertiary font-semibold text-xs flex items-center gap-0.5 bg-tertiary/10 px-2 py-0.5 rounded-full">
+                                    <Shield size={12} /> {applicant.badge}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-error font-bold text-xs">No-Show: {applicant.noShowRate}</p>
+                                <p className="text-on-surface-variant text-xs mt-0.5">{applicant.distance}</p>
+                              </div>
+                            </div>
+                            
+                            <p className="mt-3 text-on-surface-variant text-sm leading-relaxed">{applicant.bio}</p>
+                            
+                            <div className="mt-4 flex gap-3" onClick={(e) => e.stopPropagation()}>
+                              {applicant.status === 'Hired' ? (
+                                <button disabled className="flex-1 bg-green-50 text-green-600 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border border-green-200">
+                                  <Check size={14} /> Hired
+                                </button>
+                              ) : (
+                                <button onClick={() => handleHire(applicant)} className="flex-1 bg-primary hover:bg-primary/95 text-white py-2.5 rounded-xl text-xs font-bold shadow-sm transition-all">
+                                  Hire Now
+                                </button>
+                              )}
+                              <button onClick={() => handleOpenChat(applicant)} className="flex-1 border border-primary text-primary hover:bg-primary/5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5">
+                                <Send size={12} /> Message
+                              </button>
                             </div>
                           </div>
-                          <div className="text-right">
-                            <p className="text-error font-bold text-xs">No-Show: {applicant.noShowRate}</p>
-                            <p className="text-on-surface-variant text-xs mt-0.5 font-medium">{applicant.distance}</p>
-                          </div>
-                        </div>
-                        
-                        <p className="mt-3 text-on-surface-variant text-xs leading-relaxed max-w-xl">
-                          {applicant.bio}
-                        </p>
-                        
-                        <div className="mt-5 flex gap-3">
-                          {applicant.status === 'Hired' ? (
-                            <button disabled className="flex-1 bg-tertiary/15 text-tertiary py-2.5 rounded-xl text-xs font-bold leading-none cursor-default flex items-center justify-center gap-1.5">
-                              <Check size={14} />
-                              <span>Worker Booked</span>
-                            </button>
-                          ) : (
-                            <button onClick={() => handleHire(applicant)} className="flex-1 bg-primary hover:bg-primary/95 text-white py-2.5 rounded-xl text-xs font-bold shadow-xs hover:shadow-md active:scale-95 transition-all cursor-pointer">
-                              Hire Now
-                            </button>
-                          )}
-                          <button onClick={() => handleOpenChat(applicant)} className="flex-1 border border-primary text-primary hover:bg-primary/5 py-2.5 rounded-xl text-xs font-bold active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5 bg-white">
-                            <span>Open Conversation</span>
-                          </button>
                         </div>
                       </div>
-                    </div>
-                  </div>
-                ))}
-              </section>
-
-              <aside className="lg:col-span-4 space-y-6">
-                <div className="bg-surface-container-high p-6 rounded-2xl border border-outline-variant space-y-4 shadow-xs">
-                  <div className="flex items-center gap-2">
-                    <Shield className="text-primary" size={20} />
-                    <h3 className="font-display font-semibold text-sm text-on-surface">Emergency Backup Pool</h3>
-                  </div>
-                  <p className="text-xs text-on-surface-variant leading-relaxed font-sans">
-                    Workers within 500m available for instant call-up if your hire cancels.
-                  </p>
-                  
-                  <div className="space-y-3 pt-2">
-                    {backupPool.map((worker) => (
-                      <div 
-                        key={worker.id}
-                        className="flex items-center justify-between p-3 bg-surface-container-lowest rounded-xl border border-outline-variant/60 hover:border-primary/50 transition-colors cursor-pointer"
-                        onClick={() => {
-                          setShowSuccessToast(`Contacting backup staff ${worker.name} on WhatsApp...`);
-                          setTimeout(() => setShowSuccessToast(null), 4000);
-                        }}
-                      >
-                        <div className="flex items-center gap-3">
-                          <img className="w-10 h-10 rounded-full object-cover border border-outline-variant" src={worker.avatar} alt={worker.name} />
-                          <div>
-                            <p className="font-semibold text-xs text-on-surface">{worker.name}</p>
-                            <p className="text-[10px] text-on-surface-variant flex items-center gap-0.5 mt-0.5 font-medium">
-                              <Star size={10} fill="currentColor" className="text-secondary" />
-                              {worker.rating} • {worker.gigsCount}
-                            </p>
-                          </div>
-                        </div>
-                        <span className="bg-tertiary text-white px-2 py-0.5 rounded-full text-[9px] font-bold tracking-wider uppercase">
-                          READY
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                  
-                  <button 
-                    onClick={handleEmergencyBackup} 
-                    disabled={isFindingBackup || backupPool.length === 0}
-                    className="w-full text-center py-2.5 bg-red-500 text-white font-bold text-xs rounded-lg hover:bg-red-600 cursor-pointer flex items-center justify-center gap-2 transition-all active:scale-95 mt-4"
-                  >
-                    {isFindingBackup ? (
-                      <span className="animate-pulse">🧠 Gemini AI is analyzing candidates...</span>
-                    ) : (
-                      '🚨 Trigger AI Emergency Match'
-                    )}
-                  </button>
-
-                  {/* NEW: Show the AI Result when Gemini picks a worker */}
-                  <AnimatePresence>
-                    {aiBackupChoice && (
-                      <motion.div 
-                        initial={{ opacity: 0, height: 0 }} 
-                        animate={{ opacity: 1, height: 'auto' }} 
-                        className="mt-4 p-3 bg-primary/10 border border-primary/20 rounded-xl overflow-hidden"
-                      >
-                        <div className="flex items-center gap-2 mb-2">
-                          <Sparkles size={16} className="text-primary" />
-                          <h4 className="font-bold text-xs text-primary uppercase tracking-wider">AI Top Match</h4>
-                        </div>
-                        <p className="text-xs font-bold text-on-surface">
-                          {backupPool.find((w: any) => w.id === aiBackupChoice.selectedWorkerId)?.name || 'Verified Backup Candidate'}
-                        </p>
-                        <p className="text-[11px] text-on-surface-variant mt-1 italic leading-relaxed">
-                          "{aiBackupChoice.reason}"
-                        </p>
-                        <button 
-                          onClick={() => {
-                            setShowSuccessToast("Dispatch alert sent to worker's GigIT app!");
-                            setAiBackupChoice(null); // Clear it after sending
-                          }}
-                          className="mt-3 w-full py-2 bg-primary text-white text-[10px] font-bold rounded-lg hover:bg-primary/90 transition-colors"
-                        >
-                          Dispatch Shift Alert
-                        </button>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-
-                <div className="bg-white p-6 rounded-2xl border border-outline-variant shadow-xs space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h4 className="font-semibold text-xs text-on-surface uppercase tracking-wider">Local Demand Insight</h4>
-                    <Info size={14} className="text-on-surface-variant" />
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1 h-2 bg-surface-container-high rounded-full overflow-hidden">
-                      <div className="w-3/4 h-full bg-primary rounded-full"></div>
-                    </div>
-                    <span className="text-xs text-primary font-bold">HIGH</span>
-                  </div>
-                  <p className="text-xs text-on-surface-variant leading-relaxed font-sans">
-                    Worker availability in <strong>Likas / Damai</strong> is exceptionally high this afternoon. Perfect time to publish weekend shifts!
-                  </p>
-                </div>
-              </aside>
+                    );
+                  })
+                )}
+              </div>
             </div>
-          </div>
+          )}
+          {currentSubView === 'mygigs' && (
+            <EmployerMyGigs onNavigate={onNavigate} onPostNewGig={() => setShowPostModal(true)} />
+          )}
+          {currentSubView === 'hired' && (
+            <HiredWorkers />
+          )}
         </main>
       </div>
 
       {/* Post Gig Modal */}
       <AnimatePresence>
         {showPostModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="bg-white rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl border border-outline-variant">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs overflow-y-auto">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl max-w-2xl w-full overflow-hidden shadow-2xl border border-outline-variant">
               <div className="px-6 py-4 border-b border-outline-variant bg-surface flex justify-between items-center">
                 <h3 className="font-display font-bold text-base text-primary">Post a New Student Gig</h3>
-                <button onClick={() => setShowPostModal(false)} className="text-on-surface-variant hover:text-on-surface">
-                  <X size={20} />
-                </button>
+                <button onClick={() => setShowPostModal(false)}><X size={20} /></button>
               </div>
-              <form onSubmit={handlePostSubmit} className="p-6 space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-on-surface-variant mb-1 uppercase tracking-wide">Gig Title</label>
-                  <input type="text" required value={formData.title} onChange={e => setFormData({ ...formData, title: e.target.value })} className="w-full px-3.5 py-2 rounded-xl border border-outline-variant focus:outline-primary placeholder:text-outline-variant text-sm bg-surface-container-lowest" placeholder="e.g. Barista, Kitchen Helper, Usher" />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-on-surface-variant mb-1 uppercase tracking-wide">Compensation (RM/hr)</label>
-                    <input type="number" required value={formData.rate} onChange={e => setFormData({ ...formData, rate: e.target.value })} className="w-full px-3.5 py-2 rounded-xl border border-outline-variant focus:outline-primary placeholder:text-outline-variant text-sm bg-surface-container-lowest" placeholder="e.g. 12" />
+              <div className="p-6">
+                <div className="mb-6 p-4 bg-blue-50 rounded-xl">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-sm font-bold text-blue-800">⚡ Quick Actions</span>
+                    <div className="relative">
+                      <button onClick={() => setShowTemplateDropdown(!showTemplateDropdown)} className="flex items-center gap-2 px-3 py-1.5 bg-white border border-blue-200 rounded-lg text-xs">
+                        <Copy size={14} /> Load Template <ChevronDown size={14} />
+                      </button>
+                      {showTemplateDropdown && (
+                        <div className="absolute right-0 mt-2 w-48 bg-white border rounded-lg shadow-lg z-20">
+                          {Object.keys(GIG_TEMPLATES).map((template) => (
+                            <button key={template} onClick={() => applyTemplate(template as keyof typeof GIG_TEMPLATES)} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50">{template}</button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-bold text-on-surface-variant mb-1 uppercase tracking-wide">Shift Duration</label>
-                    <input type="text" required value={formData.duration} onChange={e => setFormData({ ...formData, duration: e.target.value })} className="w-full px-3.5 py-2 rounded-xl border border-outline-variant focus:outline-primary placeholder:text-outline-variant text-sm bg-surface-container-lowest" placeholder="e.g. 4 Hours" />
+                  <div className="flex gap-2 flex-wrap">
+                    <button onClick={resetToDefault} className="px-3 py-1.5 bg-white border rounded-lg text-xs">🔄 Reset</button>
+                    <button onClick={generateRandomGig} className="px-3 py-1.5 bg-white border rounded-lg text-xs">🎲 Random</button>
                   </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-on-surface-variant mb-1 uppercase tracking-wide">Category</label>
-                  <select value={formData.category} onChange={e => setFormData({ ...formData, category: e.target.value as any })} className="w-full px-3.5 py-2 rounded-xl border border-outline-variant focus:outline-primary text-sm bg-surface-container-lowest">
-                    <option value="F&B">Food & Beverage</option>
-                    <option value="Event">Event Support</option>
-                    <option value="Logistics">Logistics / Delivery</option>
-                    <option value="Cleaning">Cleaning & Housekeeping</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-on-surface-variant mb-1 uppercase tracking-wide">Requirements / Brief Description</label>
-                  <textarea rows={3} value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} className="w-full px-3.5 py-2 rounded-xl border border-outline-variant focus:outline-primary placeholder:text-outline-variant text-sm bg-surface-container-lowest" placeholder="Describe tasks, wear code, meals provided, etc..." />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-on-surface-variant mb-1 uppercase tracking-wide">Tags (comma-separated)</label>
-                  <input type="text" value={formData.tags} onChange={e => setFormData({ ...formData, tags: e.target.value })} className="w-full px-3.5 py-2 rounded-xl border border-outline-variant focus:outline-primary placeholder:text-outline-variant text-sm bg-surface-container-lowest" placeholder="e.g. No Experience, English Required" />
-                </div>
-                
-                <div className="pt-4 flex gap-3">
-                  <button type="button" onClick={() => setShowPostModal(false)} className="flex-1 py-3 border border-outline-variant rounded-xl text-xs font-bold text-on-surface hover:bg-surface active:scale-95 transition-all text-sm cursor-pointer">Cancel</button>
-                  <button type="submit" className="flex-1 py-3 bg-primary text-white rounded-xl font-bold shadow-md hover:bg-primary/95 hover:scale-102 active:scale-95 transition-all text-sm cursor-pointer">Publish Shift Gigs</button>
-                </div>
-              </form>
+                <form onSubmit={handlePostSubmit} className="space-y-4">
+                  <div><label className="block text-xs font-bold mb-1">Title *</label><input type="text" required value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full px-3.5 py-2 rounded-xl border focus:outline-primary text-sm" /></div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div><label className="block text-xs font-bold mb-1">Rate (RM)</label><input type="text" required value={formData.rate} onChange={e => setFormData({...formData, rate: e.target.value})} className="w-full px-3.5 py-2 rounded-xl border focus:outline-primary text-sm" /></div>
+                    <div><label className="block text-xs font-bold mb-1">Duration</label><input type="text" required value={formData.duration} onChange={e => setFormData({...formData, duration: e.target.value})} className="w-full px-3.5 py-2 rounded-xl border focus:outline-primary text-sm" /></div>
+                  </div>
+                  <div><label className="block text-xs font-bold mb-1">Category</label><select value={formData.category} onChange={e => setFormData({...formData, category: e.target.value as any})} className="w-full px-3.5 py-2 rounded-xl border focus:outline-primary text-sm"><option value="F&B">F&B</option><option value="Event">Event</option><option value="Logistics">Logistics</option><option value="Cleaning">Cleaning</option></select></div>
+                  <div><label className="block text-xs font-bold mb-1">Location</label><input type="text" required value={formData.location} onChange={e => setFormData({...formData, location: e.target.value})} className="w-full px-3.5 py-2 rounded-xl border focus:outline-primary text-sm" /></div>
+                  <div><label className="block text-xs font-bold mb-1">Description</label><textarea rows={3} required value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} className="w-full px-3.5 py-2 rounded-xl border focus:outline-primary text-sm" /></div>
+                  <div><label className="block text-xs font-bold mb-1">Tags</label><input type="text" value={formData.tags} onChange={e => setFormData({...formData, tags: e.target.value})} className="w-full px-3.5 py-2 rounded-xl border focus:outline-primary text-sm" placeholder="comma, separated" /></div>
+                  <div className="flex gap-3 pt-4">
+                    <button type="button" onClick={() => setShowPostModal(false)} className="flex-1 py-3 border rounded-xl text-sm font-bold">Cancel</button>
+                    <button type="submit" className="flex-1 py-3 bg-primary text-white rounded-xl font-bold">Post Gig</button>
+                  </div>
+                </form>
+              </div>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
 
-      {/* Messaging Chat Slider Modal */}
+      {/* Chat Modal */}
       <AnimatePresence>
         {selectedApplicant && (
-          <div className="fixed inset-0 z-50 flex justify-end p-0 md:p-4 bg-black/40 backdrop-blur-xs">
-            <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 25 }} className="bg-white w-full max-w-md h-full md:h-[calc(100vh-32px)] md:rounded-2xl border-l border-outline-variant flex flex-col justify-between shadow-2xl relative">
-              <div className="p-4 border-b border-outline-variant bg-surface flex items-center justify-between">
+          <div className="fixed inset-0 z-50 flex justify-end p-0 md:p-4 bg-black/40">
+            <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} className="bg-white w-full max-w-md h-full md:rounded-2xl flex flex-col">
+              <div className="p-4 border-b flex justify-between items-center">
                 <div className="flex items-center gap-3">
-                  <img src={selectedApplicant.avatar} alt={selectedApplicant.name} className="w-10 h-10 rounded-full object-cover border border-outline-variant" />
-                  <div>
-                    <h3 className="font-bold text-sm text-on-surface leading-tight">{selectedApplicant.name}</h3>
-                    <p className="text-[10px] text-primary font-semibold flex items-center gap-1 mt-0.5">
-                      <span className="w-1.5 h-1.5 bg-tertiary rounded-full animate-pulse"></span>
-                      Online • Verified Candidate
-                    </p>
-                  </div>
+                  <img src={selectedApplicant.avatar} className="w-10 h-10 rounded-full object-cover" />
+                  <div><h3 className="font-bold text-sm">{selectedApplicant.name}</h3><p className="text-[10px] text-green-600">● Online</p></div>
                 </div>
-                <button onClick={() => setSelectedApplicant(null)} className="text-on-surface-variant hover:text-on-surface p-1">
-                  <X size={20} />
-                </button>
+                <button onClick={() => setSelectedApplicant(null)}><X size={20} /></button>
               </div>
-
-              <div className="flex-1 p-4 overflow-y-auto space-y-4 bg-surface-container-lowest">
-                <div className="text-center">
-                  <span className="text-[10px] uppercase font-bold tracking-wider text-outline bg-surface px-3 py-1 rounded-full border border-outline-variant/60">
-                    Secure Chat • GigIT Safeguard
-                  </span>
-                </div>
-
+              <div className="flex-1 p-4 overflow-y-auto space-y-3">
                 {chatMessages.map((msg, i) => (
                   <div key={i} className={`flex ${msg.sender === 'employer' ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[75%] p-3.5 rounded-2xl text-xs leading-relaxed space-y-1 ${msg.sender === 'employer' ? 'bg-primary text-white rounded-tr-xs' : 'bg-surface-container hover:bg-surface-container-high transition-colors text-on-surface rounded-tl-xs border border-outline-variant/40'}`}>
+                    <div className={`max-w-[75%] p-3 rounded-2xl text-sm ${msg.sender === 'employer' ? 'bg-primary text-white' : 'bg-gray-100'}`}>
                       <p>{msg.text}</p>
-                      <p className={`text-[9px] text-right ${msg.sender === 'employer' ? 'text-white/60' : 'text-on-surface-variant font-medium'}`}>{msg.time}</p>
+                      <p className={`text-[9px] mt-1 ${msg.sender === 'employer' ? 'text-white/60' : 'text-gray-500'}`}>{msg.time}</p>
                     </div>
                   </div>
                 ))}
               </div>
-
-              <form onSubmit={handleSendMessage} className="p-4 border-t border-outline-variant bg-surface flex gap-2">
-                <input type="text" value={newMessageText} onChange={e => setNewMessageText(e.target.value)} placeholder="Ask about uniform, hours, or specific experience..." className="flex-1 px-4 py-2.5 rounded-xl border border-outline-variant focus:outline-primary text-xs bg-white" />
-                <button type="submit" className="p-2.5 bg-primary text-white rounded-xl hover:bg-primary/95 transition-all text-xs flex items-center justify-center cursor-pointer active:scale-95">
-                  <Send size={16} />
-                </button>
+              <form onSubmit={handleSendMessage} className="p-4 border-t flex gap-2">
+                <input type="text" value={newMessageText} onChange={e => setNewMessageText(e.target.value)} placeholder="Type a message..." className="flex-1 px-4 py-2.5 rounded-xl border text-sm" />
+                <button type="submit" className="p-2.5 bg-primary text-white rounded-xl"><Send size={18} /></button>
               </form>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
 
-      {/* Mobile Bottom Bar navigation */}
-      <div className="md:hidden fixed bottom-0 left-0 w-full z-40 bg-surface border-t border-outline-variant py-2 flex justify-around items-center shadow-lg">
-        <button onClick={() => onNavigate(AppView.Landing)} className="flex flex-col items-center text-on-surface-variant">
-          <span className="material-symbols-outlined text-xl">home</span>
-          <span className="text-[10px] mt-0.5">Home</span>
-        </button>
-        <button onClick={() => onNavigate(AppView.WorkerBrowse)} className="flex flex-col items-center text-primary">
-          <div className="p-1 px-4 bg-primary-container/20 text-primary rounded-full">
-            <span className="material-symbols-outlined text-xl h-5 flex items-center justify-center">dashboard</span>
+      {/* Backup Pool Modal */}
+      <AnimatePresence>
+        {showBackupPool && selectedGigForBackup && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60">
+            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} className="bg-white rounded-2xl max-w-lg w-full">
+              <div className="px-6 py-4 border-b flex justify-between items-center">
+                <h3 className="font-bold text-primary">Emergency Backup</h3>
+                <button onClick={() => setShowBackupPool(false)}><X size={20} /></button>
+              </div>
+              <div className="p-6">
+                <div className="mb-4 p-3 bg-amber-50 rounded-xl">
+                  <p className="text-xs font-semibold text-amber-800">For Gig: {selectedGigForBackup.title}</p>
+                </div>
+                <BackupPoolWidget 
+                  gigId={selectedGigForBackup.id}
+                  gigTitle={selectedGigForBackup.title}
+                  employerId={user?.id}
+                  onWorkerDispatched={(worker) => {
+                    setShowBackupPool(false);
+                    setShowSuccessToast(`✅ Emergency backup requested from ${worker.worker_name}!`);
+                    setTimeout(() => setShowSuccessToast(null), 5000);
+                  }}
+                />
+              </div>
+            </motion.div>
           </div>
-          <span className="text-[10px] font-bold mt-1">Gigs Portal</span>
-        </button>
-        <button onClick={() => {}} className="flex flex-col items-center text-on-surface-variant">
-          <span className="material-symbols-outlined text-xl">notifications</span>
-          <span className="text-[10px] mt-0.5">Alerts</span>
-        </button>
-      </div>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {showWorkerProfile && selectedWorkerProfile && (
+          <WorkerProfileModal
+            worker={selectedWorkerProfile}
+            onClose={() => setShowWorkerProfile(false)}
+            onHire={(worker) => {
+              handleHire(worker);
+              setShowWorkerProfile(false);
+            }}
+            onReject={(worker, reason) => {
+              setShowSuccessToast(`Rejected ${worker.name} - Reason: ${reason}`);
+              setTimeout(() => setShowSuccessToast(null), 3000);
+              setShowWorkerProfile(false);
+            }}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

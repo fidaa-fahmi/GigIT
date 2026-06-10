@@ -1,82 +1,143 @@
+// AuthContext.tsx - Updated with role management
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User } from '@supabase/supabase-js';
 import { supabase } from '../supabaseClient';
 
-// FIX: Added signInWithGoogle to the interface — App.tsx calls this but it
-// was missing from the context, causing a silent runtime crash on click.
 interface AuthContextType {
   user: User | null;
+  userRole: 'worker' | 'employer' | null;
   loading: boolean;
-  signUpWithEmail: (email: string, password: string, fullName: string, role: string) => Promise<void>; // ADD ROLE HERE
+  signUpWithEmail: (email: string, password: string, fullName: string, role: 'worker' | 'employer') => Promise<void>;
   signInWithEmail: (email: string, password: string) => Promise<void>;
-  signInWithGoogle: () => Promise<void>;
   logOut: () => Promise<void>;
+  switchRole: (role: 'worker' | 'employer') => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [userRole, setUserRole] = useState<'worker' | 'employer' | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Fetch user role from profiles table
+  const fetchUserRole = async (userId: string) => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', userId)
+      .single();
+    
+    if (!error && data) {
+      setUserRole(data.role);
+      // Store in localStorage for quick access
+      localStorage.setItem('userRole', data.role);
+    }
+  };
+
   useEffect(() => {
-    // Check if user session already exists locally on window boot
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+      
+      if (currentUser) {
+        await fetchUserRole(currentUser.id);
+      } else {
+        localStorage.removeItem('userRole');
+        setUserRole(null);
+      }
+      
       setLoading(false);
     });
 
-    // Listen continuously for manual sign-ins/sign-outs
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+      
+      if (currentUser) {
+        await fetchUserRole(currentUser.id);
+      } else {
+        localStorage.removeItem('userRole');
+        setUserRole(null);
+      }
+      
       setLoading(false);
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  // 1. FREE MANUAL REGISTRATION (Sign Up)
-  const signUpWithEmail = async (email: string, password: string, fullName: string, role: string) => {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { 
-          full_name: fullName,
-          role: role // Save the role (worker or employer)
-        },
+  // AuthContext.tsx - Updated signUpWithEmail
+const signUpWithEmail = async (email: string, password: string, fullName: string, role: 'worker' | 'employer') => {
+  // Let the database trigger handle profile creation
+  const { data: authData, error: signUpError } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: { 
+        full_name: fullName,
+        role: role 
       },
-    });
-    if (error) throw error;
-  };
+    },
+  });
+  
+  if (signUpError) throw signUpError;
+  
+  // Don't manually insert profile - let the trigger do it
+  // Just wait a moment for the trigger to execute
+  await new Promise(resolve => setTimeout(resolve, 500));
+};
 
-  // 2. FREE MANUAL LOGIN (Sign In)
   const signInWithEmail = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
   };
 
-  // 3. GOOGLE OAUTH LOGIN
-  // FIX: This function was called in App.tsx but was never defined here.
-  // Supabase OAuth redirects to the current page after authentication.
-  const signInWithGoogle = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: window.location.origin,
-      },
-    });
-    if (error) throw error;
+  const logOut = async () => {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      
+      // Clear all local state
+      localStorage.removeItem('userRole');
+      setUser(null);
+      setUserRole(null);
+      
+      // Optional: Clear any other cached data
+      sessionStorage.clear();
+      
+    } catch (error) {
+      console.error('Logout error:', error);
+      // Still clear local state even if Supabase fails
+      localStorage.removeItem('userRole');
+      setUser(null);
+      setUserRole(null);
+    }
   };
 
-  // 4. SYSTEM LOGOUT
-  const logOut = async () => {
-    const { error } = await supabase.auth.signOut();
+  // Switch role (for users with dual roles - admin/employer)
+  const switchRole = async (role: 'worker' | 'employer') => {
+    if (!user) throw new Error('No user logged in');
+    
+    // Verify user has this role (from profiles table)
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single();
+    
     if (error) throw error;
+    
+    if (data.role !== role && data.role !== 'both') {
+      throw new Error(`User does not have ${role} role`);
+    }
+    
+    setUserRole(role);
+    localStorage.setItem('userRole', role);
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, signUpWithEmail, signInWithEmail, signInWithGoogle, logOut }}>
+    <AuthContext.Provider value={{ user, userRole, loading, signUpWithEmail, signInWithEmail, logOut, switchRole }}>
       {children}
     </AuthContext.Provider>
   );
@@ -89,4 +150,3 @@ export function useAuth() {
   }
   return context;
 }
-// FIX: This file was created to centralize all authentication logic and state management.
