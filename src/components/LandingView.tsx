@@ -101,7 +101,7 @@ export default function LandingView({ onNavigate, onOpenSelector }: LandingViewP
             className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-primary text-white font-label-lg hover:bg-primary/95 shadow-xs transition-all cursor-pointer active:scale-95 text-sm"
           >
             <User size={16} />
-            <span>Portal Quick Access</span>
+            <span>Login/Sign Up</span>
           </button>
         </div>
       </nav>
