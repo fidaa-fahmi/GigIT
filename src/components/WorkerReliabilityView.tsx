@@ -21,6 +21,7 @@ import {
   Lightbulb
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { submitGigReviewWithAI } from '../services/api';
 
 interface WorkerReliabilityViewProps {
   onNavigate: (view: AppView) => void;
@@ -45,8 +46,16 @@ export default function WorkerReliabilityView({ onNavigate, isEmbedded = false }
   const reliabilityScore = ((completedShifts * 5 - noShowCount * 10 + activeHistory.reduce((sum, item) => sum + item.rating, 0)) / (completedShifts + activeHistory.length)).toFixed(1);
   const currentRatio = Math.min(100, Math.max(0, Math.round(((completedShifts) / (completedShifts + noShowCount)) * 100)));
 
-  const handleAddReview = (e: React.FormEvent) => {
-    e.preventDefault();
+   const [isAnalyzing, setIsAnalyzing] = useState(false);
+   const handleAddReview = async (e: React.FormEvent) => {
+  e.preventDefault();
+  setIsAnalyzing(true);
+  
+  try {
+    // 1. Send the text to Gemini AI
+    const aiAnalysis = await submitGigReviewWithAI(simRating, simComment);
+    
+    // 2. Add the review to the UI (using the dummy data structure)
     const newDoc: WorkHistoryItem = {
       id: `sim-${Date.now()}`,
       employer: simSME,
@@ -59,11 +68,26 @@ export default function WorkerReliabilityView({ onNavigate, isEmbedded = false }
 
     setActiveHistory(prev => [newDoc, ...prev]);
     setCompletedShifts(prev => prev + 1);
+    
+    if (aiAnalysis.isNoShow) {
+       setNoShowCount(prev => prev + 1);
+    }
+
     setShowSimulator(false);
     
-    setShowToastMessage(`Review from ${simSME} added! Your Reliability Score updated to ${reliabilityScore}! 📈`);
-    setTimeout(() => setShowToastMessage(null), 4000);
-  };
+    // 3. Show the AI's mathematical conclusion in the toast
+    const scoreModifier = aiAnalysis.modifier > 0 ? `+${aiAnalysis.modifier}` : aiAnalysis.modifier;
+    setShowToastMessage(`Gemini AI processed review from ${simSME}. Sentiment modifier: ${scoreModifier}. UI Updated! ✨`);
+    setTimeout(() => setShowToastMessage(null), 5000);
+    
+  } catch (error) {
+    console.error("AI Analysis failed:", error);
+    setShowToastMessage("Failed to connect to Gemini AI.");
+  } finally {
+    setIsAnalyzing(false);
+  }
+};
+ 
 
   const handleSimulateNoShow = () => {
     setNoShowCount(prev => prev + 1);
@@ -381,9 +405,14 @@ export default function WorkerReliabilityView({ onNavigate, isEmbedded = false }
                     </button>
                     <button 
                       type="submit"
-                      className="flex-1 py-2.5 bg-primary text-white rounded-xl font-bold shadow-md hover:bg-primary/95 hover:scale-102 active:scale-95 transition-all text-sm cursor-pointer"
+                      disabled={isAnalyzing}
+                      className="flex-1 py-2.5 bg-primary text-white rounded-xl font-bold shadow-md hover:bg-primary/95 hover:scale-102 active:scale-95 transition-all text-sm cursor-pointer disabled:opacity-70 flex justify-center items-center"
                     >
-                      Publish SME Endorsement
+                      {isAnalyzing ? (
+                        <span className="animate-pulse">Gemini is Analyzing...</span>
+                      ) : (
+                        "Publish SME Endorsement"
+                      )}
                     </button>
                   </div>
                 </form>

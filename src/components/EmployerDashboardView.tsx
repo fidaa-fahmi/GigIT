@@ -20,14 +20,18 @@ import {
   Send,
   Sparkles,
   Info
-} from 'lucide-react'; //
-import { motion, AnimatePresence } from 'motion/react'; //
+} from 'lucide-react'; 
+import { motion, AnimatePresence } from 'motion/react';
+import { triggerEmergencyBackup } from '../services/api';
 
 interface EmployerDashboardViewProps {
   onNavigate: (view: AppView) => void;
   gigs: Gig[];
   onAddGig: (gig: Gig) => void;
 }
+const [isFindingBackup, setIsFindingBackup] = useState(false);
+const [aiBackupChoice, setAiBackupChoice] = useState<any>(null);
+
 
 export default function EmployerDashboardView({ onNavigate, gigs, onAddGig }: EmployerDashboardViewProps) {
   const [applicants, setApplicants] = useState<Applicant[]>(initialApplicants); //
@@ -45,6 +49,28 @@ export default function EmployerDashboardView({ onNavigate, gigs, onAddGig }: Em
   const [hiredStatus, setHiredStatus] = useState<Record<string, string>>({}); //
   const [showSuccessToast, setShowSuccessToast] = useState<string | null>(null); //
 
+  const handleEmergencyBackup = async () => {
+    setIsFindingBackup(true);
+    try {
+      // 1. Send your dummy backupPool to Gemini
+      const result = await triggerEmergencyBackup(
+        "Need a reliable worker for an afternoon Cafe shift ASAP. Priority on high ratings.", 
+        backupPool
+      );
+      
+      // 2. Save the result
+      setAiBackupChoice(result);
+      setShowSuccessToast(`Gemini AI successfully matched a backup worker!`);
+      setTimeout(() => setShowSuccessToast(null), 4000);
+      
+    } catch (error) {
+      console.error("Backup search failed", error);
+      setShowSuccessToast("AI Matchmaking failed.");
+    } finally {
+      setIsFindingBackup(false);
+    }
+  };  
+  
   // New gig form states
   const [formData, setFormData] = useState({
     title: 'Cafe Assistant',
@@ -347,9 +373,48 @@ export default function EmployerDashboardView({ onNavigate, gigs, onAddGig }: Em
                     ))}
                   </div>
                   
-                  <button onClick={() => { setShowSuccessToast("Broadcasting push-alert to 12 nearby student accounts..."); setTimeout(() => setShowSuccessToast(null), 4000); }} className="w-full text-center py-2 text-primary font-bold text-xs hover:underline cursor-pointer bg-white/50 rounded-lg">
-                    Send Instant Alert to All (12 Available)
+                  <button 
+                    onClick={handleEmergencyBackup} 
+                    disabled={isFindingBackup || backupPool.length === 0}
+                    className="w-full text-center py-2.5 bg-red-500 text-white font-bold text-xs rounded-lg hover:bg-red-600 cursor-pointer flex items-center justify-center gap-2 transition-all active:scale-95 mt-4"
+                  >
+                    {isFindingBackup ? (
+                      <span className="animate-pulse">🧠 Gemini AI is analyzing candidates...</span>
+                    ) : (
+                      '🚨 Trigger AI Emergency Match'
+                    )}
                   </button>
+
+                  {/* NEW: Show the AI Result when Gemini picks a worker */}
+                  <AnimatePresence>
+                    {aiBackupChoice && (
+                      <motion.div 
+                        initial={{ opacity: 0, height: 0 }} 
+                        animate={{ opacity: 1, height: 'auto' }} 
+                        className="mt-4 p-3 bg-primary/10 border border-primary/20 rounded-xl overflow-hidden"
+                      >
+                        <div className="flex items-center gap-2 mb-2">
+                          <Sparkles size={16} className="text-primary" />
+                          <h4 className="font-bold text-xs text-primary uppercase tracking-wider">AI Top Match</h4>
+                        </div>
+                        <p className="text-xs font-bold text-on-surface">
+                          {backupPool.find((w: any) => w.id === aiBackupChoice.selectedWorkerId)?.name || 'Verified Backup Candidate'}
+                        </p>
+                        <p className="text-[11px] text-on-surface-variant mt-1 italic leading-relaxed">
+                          "{aiBackupChoice.reason}"
+                        </p>
+                        <button 
+                          onClick={() => {
+                            setShowSuccessToast("Dispatch alert sent to worker's GigIT app!");
+                            setAiBackupChoice(null); // Clear it after sending
+                          }}
+                          className="mt-3 w-full py-2 bg-primary text-white text-[10px] font-bold rounded-lg hover:bg-primary/90 transition-colors"
+                        >
+                          Dispatch Shift Alert
+                        </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
 
                 <div className="bg-white p-6 rounded-2xl border border-outline-variant shadow-xs space-y-3">

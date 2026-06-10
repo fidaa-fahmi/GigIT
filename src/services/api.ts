@@ -34,7 +34,7 @@ export async function verifyStudentIdWithAI(imageBase64: string) {
   
   return result;
 }
-export async function submitGigReviewWithAI(applicationId: string, employerId: string, workerId: string, rawRating: number, comment: string) {
+export async function submitGigReviewWithAI(rawRating: number, comment: string) {
   // 1. Ask Gemini to analyze the context of the text
   const prompt = `
     Analyze this gig worker review: "${comment}".
@@ -50,59 +50,21 @@ export async function submitGigReviewWithAI(applicationId: string, employerId: s
     config: { responseMimeType: "application/json" }
   });
 
-  const analysis = JSON.parse(aiResponse.text);
-
-  // 2. Save the review
-  await supabase.from('reviews').insert({
-    application_id: applicationId,
-    reviewer_id: employerId,
-    target_id: workerId,
-    rating: rawRating,
-    comment: comment,
-    ai_sentiment_score: analysis.modifier
-  });
-
-  // 3. Update the Worker's Reliability Score in Database
-  // Fetch current score, apply the modifier math, and update
-  const { data: profile } = await supabase.from('profiles').select('*').eq('id', workerId).single();
-  
-  let newScore = Math.min(5.0, Math.max(1.0, Number(profile.reliability_score) + analysis.modifier));
-  let newNoShowCount = analysis.isNoShow ? profile.no_show_count + 1 : profile.no_show_count;
-
-  await supabase.from('profiles').update({
-    reliability_score: newScore,
-    no_show_count: newNoShowCount,
-    completed_shifts: profile.completed_shifts + 1
-  }).eq('id', workerId);
+  // Just return the AI's math, we won't save to Supabase for the pitch
+  return JSON.parse(aiResponse.text);
 }
 
-export async function triggerEmergencyBackup(gigId: string, gigLat: number, gigLng: number, gigDescription: string) {
-  // 1. Get all workers who are ready for backup
-  const { data: readyWorkers } = await supabase
-    .from('profiles')
-    .select('id, full_name, reliability_score, location_lat, location_lng')
-    .eq('role', 'worker')
-    .eq('is_backup_ready', true)
-    .gt('reliability_score', 4.0); // Only trust reliable workers for emergencies
-
-  // 2. Filter workers within ~5km (Basic bounding box or haversine formula)
-  const nearbyWorkers = readyWorkers.filter(w => {
-     // Implement simple distance check between (w.location_lat, w.location_lng) and (gigLat, gigLng)
-     return true; // Assume true for this example
-  });
-
-  if (nearbyWorkers.length === 0) return null;
-
-  // 3. Use AI to pick the BEST candidate from the nearby pool
+export async function triggerEmergencyBackup(gigDescription: string, nearbyWorkers: any[]) {
+  // 3. Use AI to pick the BEST candidate from the provided dummy pool
   const prompt = `
     A worker just canceled a gig. We need an emergency replacement.
     Gig Description: "${gigDescription}"
     
-    Here is the JSON list of available nearby workers:
+    Here is the JSON list of available standby workers:
     ${JSON.stringify(nearbyWorkers)}
     
-    Based on their reliability score and the gig needs, pick the single best worker to dispatch.
-    Return ONLY JSON: { "selectedWorkerId": "uuid", "reason": "Why they were chosen" }
+    Based on their reliability score, completed gigs, and the gig needs, pick the single best worker to dispatch.
+    Return ONLY JSON: { "selectedWorkerId": "string", "reason": "Why they were chosen based on their stats" }
   `;
 
   const aiResponse = await ai.models.generateContent({
@@ -111,10 +73,7 @@ export async function triggerEmergencyBackup(gigId: string, gigLat: number, gigL
     config: { responseMimeType: "application/json" }
   });
 
-  const result = JSON.parse(aiResponse.text);
-  
-  // 4. In a real app, you would insert a notification record here to alert the chosen worker
-  return result; 
+  return JSON.parse(aiResponse.text);
 }
 
 export const api = {
