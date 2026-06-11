@@ -68,25 +68,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // AuthContext.tsx - Updated signUpWithEmail
-const signUpWithEmail = async (email: string, password: string, fullName: string, role: 'worker' | 'employer') => {
-  // Let the database trigger handle profile creation
-  const { data: authData, error: signUpError } = await supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      data: { 
-        full_name: fullName,
-        role: role 
+  const signUpWithEmail = async (email: string, password: string, fullName: string, role: 'worker' | 'employer') => {
+    const { data: authData, error: signUpError } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { 
+          full_name: fullName,
+          role: role 
+        },
       },
-    },
-  });
-  
-  if (signUpError) throw signUpError;
-  
-  // Don't manually insert profile - let the trigger do it
-  // Just wait a moment for the trigger to execute
-  await new Promise(resolve => setTimeout(resolve, 500));
-};
+    });
+    
+    if (signUpError) throw signUpError;
+    
+    // Wait for trigger and retry if needed
+    let retries = 0;
+    while (retries < 5) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('id', authData.user?.id)
+        .single();
+      
+      if (profile) break;
+      retries++;
+    }
+  };
 
   const signInWithEmail = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });

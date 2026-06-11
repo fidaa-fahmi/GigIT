@@ -4,6 +4,7 @@ import { initialGigs } from '../data';
 import { api } from '../services/api';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
+import ClockInOut from './ClockInOut';
 import {
   Bell,
   User,

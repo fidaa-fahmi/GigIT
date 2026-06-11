@@ -11,6 +11,8 @@ import HiredWorkers from './HiredWorkers';
 import WorkerProfileModal from './WorkerProfileModal';
 import EmployerSettings from './EmployerSettings';  // Add this once
 import Wallet from './Wallet';  // Add this once
+import AdminSeedButton from './AdminSeedButton';
+import DebugPanel from './DebugPanel';
 import { 
   Bell, Plus, Star, Check, MapPin, Shield, TrendingUp, Eye, 
   Briefcase, Users, CreditCard, Settings, LogOut, X, Send, 
@@ -313,50 +315,42 @@ export default function EmployerDashboardView({ onNavigate, gigs, onAddGig, onLo
     }
     
     setIsAiRanking(true);
-    try {
-      const prompt = `
-        You are an AI hiring assistant for GigIT. Rank these candidates based on their suitability.
-        
-        Candidates: ${JSON.stringify(applicants.map(a => ({
-          id: a.id,
-          name: a.name,
-          rating: a.rating,
-          badge: a.badge,
-          bio: a.bio,
-          noShowRate: a.noShowRate
-        })))}
-        
-        Return a JSON array with objects: { "applicantId": "string", "score": number (0-100), "reason": "string" }
-        Sort by highest score first.
-        Higher rating and lower no-show rate = better score.
-      `;
+    
+    // Calculate scores manually (works without AI)
+    const rankings = applicants.map(applicant => {
+      // Normalize rating (0-5) to (0-100)
+      const ratingScore = (applicant.rating / 5) * 70;
       
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',  // Changed from 'gemini-2.0-flash-exp'
-        contents: prompt,
-        config: { responseMimeType: "application/json" }
-      });
+      // No-show score (lower no-show = higher score)
+      const noShowValue = applicant.noShowRate === '0%' ? 100 : 
+                          applicant.noShowRate === '5%' ? 80 : 60;
+      const noShowScore = (noShowValue / 100) * 30;
       
-      const rankings = JSON.parse(response.text);
-      setAiRanking(rankings);
-      setShowSuccessToast('✨ AI has ranked your candidates by best match!');
-      setTimeout(() => setShowSuccessToast(null), 3000);
-    } catch (err) {
-      console.error('AI ranking failed:', err);
-      // Fallback: sort by rating
-      const fallbackRankings = [...applicants]
-        .sort((a, b) => b.rating - a.rating)
-        .map((a, index) => ({
-          applicantId: a.id,
-          score: Math.round(100 - (index * 10)),
-          reason: `Based on ${a.rating}⭐ rating and ${a.badge} status`
-        }));
-      setAiRanking(fallbackRankings);
-      setShowSuccessToast('AI temporarily unavailable. Showing rating-based ranking.');
-      setTimeout(() => setShowSuccessToast(null), 3000);
-    } finally {
-      setIsAiRanking(false);
-    }
+      const totalScore = ratingScore + noShowScore;
+      
+      let reason = '';
+      if (applicant.rating >= 4.8 && applicant.noShowRate === '0%') {
+        reason = `${applicant.name} is an excellent candidate with ${applicant.rating}⭐ rating and perfect attendance.`;
+      } else if (applicant.rating >= 4.5) {
+        reason = `${applicant.name} has a strong ${applicant.rating}⭐ rating and reliable track record.`;
+      } else {
+        reason = `${applicant.name} meets the basic requirements for this position.`;
+      }
+      
+      return {
+        applicantId: applicant.id,
+        score: Math.round(totalScore),
+        reason: reason
+      };
+    });
+    
+    // Sort by score descending
+    rankings.sort((a, b) => b.score - a.score);
+    
+    setAiRanking(rankings);
+    setShowSuccessToast('✨ Candidates ranked by reliability score!');
+    setTimeout(() => setShowSuccessToast(null), 3000);
+    setIsAiRanking(false);
   };
 
   // Handle hiring
@@ -777,6 +771,7 @@ export default function EmployerDashboardView({ onNavigate, gigs, onAddGig, onLo
           )}
           {currentSubView === 'settings' && <EmployerSettings />}
           {currentSubView === 'wallet' && <Wallet />}
+          {import.meta.env.DEV && <AdminSeedButton />}
         </main>
       </div>
 
@@ -909,6 +904,7 @@ export default function EmployerDashboardView({ onNavigate, gigs, onAddGig, onLo
           />
         )}
       </AnimatePresence>
+      {import.meta.env.DEV && <DebugPanel />}
     </div>
   );
 }

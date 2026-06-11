@@ -178,6 +178,27 @@ export default function EmployerMyGigs({ onNavigate, onPostNewGig }: EmployerMyG
     }
   };
 
+  const deleteGig = async (gigId: string) => {
+    try {
+      setToastMessage('Deleting gig...');
+      
+      const { error } = await supabase
+        .from('gigs')
+        .delete()
+        .eq('id', gigId);
+      
+      if (error) throw error;
+      
+      setMyGigs(prev => prev.filter(gig => gig.id !== gigId));
+      setShowDeleteConfirm(null);
+      setToastMessage('✅ Gig deleted successfully!');
+      setTimeout(() => setToastMessage(null), 3000);
+    } catch (err) {
+      console.error('Error deleting gig:', err);
+      setToastMessage('❌ Failed to delete gig');
+      setTimeout(() => setToastMessage(null), 3000);
+    }
+  };
   const filteredGigs = myGigs
     .filter(gig => statusFilter === 'all' || gig.status === statusFilter)
     .filter(gig => gig.title.toLowerCase().includes(searchTerm.toLowerCase()) || 

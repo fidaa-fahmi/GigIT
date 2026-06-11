@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { AppView, WorkHistoryItem } from '../types';
 import { workHistory } from '../data';
+// import { submitGigReviewWithAI } from '../services/api';
 import { 
   ArrowLeft, 
   Award, 

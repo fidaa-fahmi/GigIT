@@ -1,167 +1,178 @@
-// components/Wallet.tsx - Employer version (no top-up, only payouts)
-import { useState, useEffect } from 'react';
-import { supabase } from '../services/api';
+// components/Wallet.tsx - Using Payment Context
+import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { usePayment } from '../context/PaymentContext';
 import { motion, AnimatePresence } from 'motion/react';
-import { Wallet as WalletIcon, CreditCard, Send, ArrowUpRight, ArrowDownRight, DollarSign } from 'lucide-react';
+import { 
+  CreditCard, Send, ArrowUpRight, ArrowDownRight, DollarSign, 
+  Plus, History, RefreshCw, CheckCircle, AlertCircle, Users, X
+} from 'lucide-react';
+// import { X } from 'lucide-react';
 
 export default function Wallet() {
-  const { user, userRole } = useAuth();
-  const [totalPaid, setTotalPaid] = useState(0);
-  const [pendingPayments, setPendingPayments] = useState(0);
-  const [transactions, setTransactions] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
+  const { 
+    walletBalance, 
+    totalPendingPayments, 
+    pendingWorkers, 
+    transactions, 
+    loading, 
+    refreshPayments, 
+    processPayment,
+    topUpWallet 
+  } = usePayment();
+  
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [showTopupModal, setShowTopupModal] = useState(false);
   const [showPayoutModal, setShowPayoutModal] = useState(false);
   const [selectedWorker, setSelectedWorker] = useState<any>(null);
+  const [topupAmount, setTopupAmount] = useState('');
   const [payoutAmount, setPayoutAmount] = useState('');
-  const [workers, setWorkers] = useState<any[]>([]);
+  const [topupMethod, setTopupMethod] = useState('card');
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    fetchWalletData();
-    fetchWorkers();
-  }, [user]);
-
-  const fetchWalletData = async () => {
-    try {
-      // Get total paid to workers
-      const { data: payments } = await supabase
-        .from('payments')
-        .select('amount')
-        .eq('employer_id', user?.id)
-        .eq('status', 'completed');
-      
-      const total = payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
-      setTotalPaid(total);
-      
-      // Get pending payments
-      const { data: pending } = await supabase
-        .from('payments')
-        .select('amount')
-        .eq('employer_id', user?.id)
-        .eq('status', 'pending');
-      
-      const pendingTotal = pending?.reduce((sum, p) => sum + p.amount, 0) || 0;
-      setPendingPayments(pendingTotal);
-      
-      // Get transactions
-      const { data: txns } = await supabase
-        .from('payments')
-        .select('*, workers:worker_id(full_name, email)')
-        .eq('employer_id', user?.id)
-        .order('created_at', { ascending: false })
-        .limit(20);
-      
-      setTransactions(txns || []);
-    } catch (err) {
-      console.error('Error fetching wallet data:', err);
-    } finally {
-      setLoading(false);
-    }
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await refreshPayments();
+    setToastMessage('✅ Data refreshed!');
+    setTimeout(() => setToastMessage(null), 2000);
+    setRefreshing(false);
   };
 
-  const fetchWorkers = async () => {
-    try {
-      const { data } = await supabase
-        .from('hired_workers')
-        .select('*, profiles:worker_id(full_name, email)')
-        .eq('employer_id', user?.id)
-        .eq('status', 'verified')
-        .eq('payment_status', 'pending');
-      
-      setWorkers(data || []);
-    } catch (err) {
-      console.error('Error fetching workers:', err);
+  const handleTopup = async () => {
+    const amount = parseFloat(topupAmount);
+    if (isNaN(amount) || amount <= 0) {
+      setToastMessage('Please enter a valid amount');
+      setTimeout(() => setToastMessage(null), 3000);
+      return;
     }
-  };
-
-  const processPayout = async () => {
-    if (!selectedWorker || !payoutAmount) return;
     
-    try {
-      const { error } = await supabase
-        .from('payments')
-        .insert({
-          employer_id: user?.id,
-          worker_id: selectedWorker.worker_id,
-          gig_id: selectedWorker.gig_id,
-          amount: parseFloat(payoutAmount),
-          status: 'pending',
-          created_at: new Date().toISOString()
-        });
-      
-      if (error) throw error;
-      
-      setToastMessage(`✅ Payment of RM ${payoutAmount} initiated to ${selectedWorker.profiles?.full_name}`);
-      setTimeout(() => setToastMessage(null), 4000);
-      
+    const success = await topUpWallet(amount);
+    if (success) {
+      setToastMessage(`✅ RM ${amount.toFixed(2)} added to wallet!`);
+      setShowTopupModal(false);
+      setTopupAmount('');
+    } else {
+      setToastMessage('❌ Top-up failed. Please try again.');
+    }
+    setTimeout(() => setToastMessage(null), 4000);
+  };
+
+  const handleProcessPayment = async () => {
+    if (!selectedWorker) return;
+    
+    const amount = parseFloat(payoutAmount);
+    if (isNaN(amount) || amount <= 0) {
+      setToastMessage('Please enter a valid amount');
+      setTimeout(() => setToastMessage(null), 3000);
+      return;
+    }
+    
+    const success = await processPayment(
+      selectedWorker.id, 
+      amount, 
+      selectedWorker.worker_name, 
+      selectedWorker.gig_title
+    );
+    
+    if (success) {
+      setToastMessage(`✅ Payment of RM ${amount.toFixed(2)} sent to ${selectedWorker.worker_name}`);
       setShowPayoutModal(false);
       setSelectedWorker(null);
       setPayoutAmount('');
-      fetchWalletData();
-      
-    } catch (err) {
-      console.error('Error processing payout:', err);
-      setToastMessage('❌ Failed to process payment');
-      setTimeout(() => setToastMessage(null), 4000);
+    } else {
+      setToastMessage('❌ Payment failed. Insufficient balance or database error.');
     }
+    setTimeout(() => setToastMessage(null), 4000);
   };
 
+  const totalSpent = transactions
+    .filter(t => t.type === 'debit')
+    .reduce((sum, t) => sum + t.amount, 0);
+
   return (
-    <div className="p-6">
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-on-surface">Payment Wallet</h2>
-        <p className="text-sm text-on-surface-variant">Manage worker payments and payouts</p>
+    <div className="max-w-7xl mx-auto p-6">
+      <div className="mb-6 flex justify-between items-center">
+        <div>
+          <h2 className="text-2xl font-bold text-on-surface">Wallet & Payments</h2>
+          <p className="text-sm text-on-surface-variant">Manage your wallet balance and pay workers</p>
+        </div>
+        <button 
+          onClick={handleRefresh}
+          disabled={refreshing}
+          className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-xl text-sm font-medium transition-all"
+        >
+          <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
+          Refresh
+        </button>
       </div>
       
-      {/* Balance Cards - Employer Version */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+      {/* Balance Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
         <div className="bg-gradient-to-r from-primary to-primary-dark text-white rounded-2xl p-6">
-          <p className="text-sm opacity-90">Total Paid to Workers</p>
-          <p className="text-3xl font-bold">RM {totalPaid.toFixed(2)}</p>
+          <p className="text-sm opacity-90">Wallet Balance</p>
+          <p className="text-3xl font-bold">RM {walletBalance.toFixed(2)}</p>
+          <button 
+            onClick={() => setShowTopupModal(true)}
+            className="mt-4 px-4 py-2 bg-white/20 rounded-lg text-sm font-semibold hover:bg-white/30 transition-colors flex items-center gap-2"
+          >
+            <Plus size={14} /> Top Up
+          </button>
+        </div>
+        <div className="bg-white rounded-2xl border p-6">
+          <p className="text-sm text-on-surface-variant">Total Spent</p>
+          <p className="text-2xl font-bold text-primary">RM {totalSpent.toFixed(2)}</p>
+          <p className="text-xs text-on-surface-variant mt-1">Lifetime payments</p>
         </div>
         <div className="bg-white rounded-2xl border p-6">
           <p className="text-sm text-on-surface-variant">Pending Payments</p>
-          <p className="text-2xl font-bold text-amber-600">RM {pendingPayments.toFixed(2)}</p>
-          {workers.length > 0 && (
+          <p className="text-2xl font-bold text-amber-600">RM {totalPendingPayments.toFixed(2)}</p>
+          <p className="text-xs text-on-surface-variant mt-1">Total payable to workers</p>
+        </div>
+        <div className="bg-white rounded-2xl border p-6">
+          <p className="text-sm text-on-surface-variant">Workers to Pay</p>
+          <p className="text-2xl font-bold text-secondary">{pendingWorkers.length}</p>
+          {pendingWorkers.length > 0 && (
             <button 
               onClick={() => setShowPayoutModal(true)}
-              className="mt-3 px-4 py-2 bg-primary text-white rounded-lg text-sm font-semibold hover:bg-primary/90 transition-all flex items-center gap-2"
+              className="mt-3 w-full px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-semibold hover:bg-primary/90 transition-all flex items-center justify-center gap-1"
             >
-              <Send size={14} /> Pay Workers ({workers.length})
+              <Send size={12} /> Pay All ({pendingWorkers.length})
             </button>
           )}
         </div>
       </div>
       
-      {/* Recent Payments */}
+      {/* Recent Transactions */}
       <div className="bg-white rounded-2xl border p-6">
-        <h3 className="font-semibold text-lg mb-4">Recent Payments</h3>
+        <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
+          <History size={18} /> Recent Transactions
+        </h3>
         
         {loading ? (
           <div className="flex justify-center py-8"><div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>
         ) : transactions.length === 0 ? (
           <div className="text-center py-8">
             <DollarSign size={40} className="mx-auto text-on-surface-variant mb-3" />
-            <p className="text-on-surface-variant">No payments made yet</p>
+            <p className="text-on-surface-variant">No transactions yet</p>
+            <button onClick={() => setShowTopupModal(true)} className="mt-2 text-primary text-sm font-semibold">Top up your wallet →</button>
           </div>
         ) : (
           <div className="space-y-3">
             {transactions.map((tx) => (
-              <div key={tx.id} className="flex items-center justify-between p-3 border-b">
+              <div key={tx.id} className="flex items-center justify-between p-3 border-b hover:bg-gray-50 transition-colors">
                 <div className="flex items-center gap-3">
-                  <ArrowDownRight className="text-red-600" />
+                  {tx.type === 'credit' ? <ArrowUpRight className="text-green-600" /> : <ArrowDownRight className="text-red-600" />}
                   <div>
-                    <p className="font-semibold text-sm">Payment to {tx.workers?.full_name || 'Worker'}</p>
+                    <p className="font-semibold text-sm">{tx.description}</p>
                     <p className="text-xs text-on-surface-variant">{new Date(tx.created_at).toLocaleDateString()}</p>
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="font-bold text-red-600">- RM {tx.amount.toFixed(2)}</p>
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full ${
-                    tx.status === 'completed' ? 'bg-green-100 text-green-700' : 
-                    tx.status === 'pending' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'
-                  }`}>
+                  <p className={`font-bold ${tx.type === 'credit' ? 'text-green-600' : 'text-red-600'}`}>
+                    {tx.type === 'credit' ? '+' : '-'} RM {tx.amount.toFixed(2)}
+                  </p>
+                  <span className="text-[9px] px-2 py-0.5 rounded-full bg-green-100 text-green-700">
                     {tx.status}
                   </span>
                 </div>
@@ -171,63 +182,65 @@ export default function Wallet() {
         )}
       </div>
       
-      {/* Payout Modal */}
+      {/* Top-up Modal */}
       <AnimatePresence>
-        {showPayoutModal && (
-          <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowPayoutModal(false)}>
+        {showTopupModal && (
+          <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowTopupModal(false)}>
             <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} className="bg-white rounded-2xl max-w-md w-full shadow-2xl" onClick={(e) => e.stopPropagation()}>
               <div className="px-6 py-4 border-b flex justify-between items-center">
-                <h3 className="font-bold text-primary">Make Payment</h3>
-                <button onClick={() => setShowPayoutModal(false)}><X size={20} /></button>
+                <h3 className="font-bold text-primary">Top Up Wallet</h3>
+                <button onClick={() => setShowTopupModal(false)}><X size={20} /></button>
               </div>
               <div className="p-6">
                 <div className="mb-4">
-                  <label className="block text-xs font-bold mb-1">Select Worker</label>
-                  <select 
-                    value={selectedWorker?.worker_id || ''} 
-                    onChange={(e) => {
-                      const worker = workers.find(w => w.worker_id === e.target.value);
-                      setSelectedWorker(worker);
-                    }}
-                    className="w-full px-4 py-2 rounded-xl border text-sm"
-                  >
-                    <option value="">Select a worker...</option>
-                    {workers.map((worker) => (
-                      <option key={worker.worker_id} value={worker.worker_id}>
-                        {worker.profiles?.full_name} - {worker.gig_title}
-                      </option>
+                  <label className="block text-xs font-bold mb-2">Select Amount</label>
+                  <div className="grid grid-cols-3 gap-3 mb-3">
+                    {[50, 100, 200, 500, 1000].map((amt) => (
+                      <button
+                        key={amt}
+                        onClick={() => setTopupAmount(amt.toString())}
+                        className={`py-2 rounded-xl border text-sm font-semibold transition-all ${
+                          parseFloat(topupAmount) === amt 
+                            ? 'bg-primary text-white border-primary' 
+                            : 'border-outline-variant hover:border-primary'
+                        }`}
+                      >
+                        RM {amt}
+                      </button>
                     ))}
-                  </select>
-                </div>
-                
-                <div className="mb-4">
-                  <label className="block text-xs font-bold mb-1">Amount (RM)</label>
-                  <input 
-                    type="number" 
-                    value={payoutAmount} 
-                    onChange={(e) => setPayoutAmount(e.target.value)}
-                    placeholder="0.00"
-                    className="w-full px-4 py-2 rounded-xl border text-sm"
+                  </div>
+                  <input
+                    type="number"
+                    placeholder="Other amount"
+                    value={topupAmount}
+                    onChange={(e) => setTopupAmount(e.target.value)}
+                    className="w-full px-4 py-2 rounded-xl border text-sm focus:outline-primary"
                   />
                 </div>
                 
-                {selectedWorker && payoutAmount && (
-                  <div className="mb-4 p-3 bg-gray-50 rounded-xl">
-                    <p className="text-xs text-on-surface-variant">Payment will be sent to:</p>
-                    <p className="font-semibold text-sm">{selectedWorker.profiles?.full_name}</p>
-                    <p className="text-xs">Bank: {selectedWorker.bank_name || 'Not specified'}</p>
-                    <p className="text-xs">Account: {selectedWorker.bank_account || 'Not specified'}</p>
+                <div className="mb-4">
+                  <label className="block text-xs font-bold mb-2">Payment Method</label>
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-3 p-3 border rounded-xl cursor-pointer hover:bg-gray-50">
+                      <input type="radio" value="card" checked={topupMethod === 'card'} onChange={() => setTopupMethod('card')} />
+                      <CreditCard size={18} />
+                      <span className="text-sm">Credit/Debit Card</span>
+                    </label>
+                    <label className="flex items-center gap-3 p-3 border rounded-xl cursor-pointer hover:bg-gray-50">
+                      <input type="radio" value="fpx" checked={topupMethod === 'fpx'} onChange={() => setTopupMethod('fpx')} />
+                      <span className="text-sm">FPX / Online Banking</span>
+                    </label>
+                    <label className="flex items-center gap-3 p-3 border rounded-xl cursor-pointer hover:bg-gray-50">
+                      <input type="radio" value="duitnow" checked={topupMethod === 'duitnow'} onChange={() => setTopupMethod('duitnow')} />
+                      <span className="text-sm">DuitNow QR</span>
+                    </label>
                   </div>
-                )}
+                </div>
                 
                 <div className="flex gap-3">
-                  <button onClick={() => setShowPayoutModal(false)} className="flex-1 py-2 border rounded-xl text-sm font-medium">Cancel</button>
-                  <button 
-                    onClick={processPayout} 
-                    disabled={!selectedWorker || !payoutAmount}
-                    className="flex-1 py-2 bg-primary text-white rounded-xl text-sm font-semibold disabled:opacity-50"
-                  >
-                    Process Payment
+                  <button onClick={() => setShowTopupModal(false)} className="flex-1 py-2 border rounded-xl text-sm font-medium">Cancel</button>
+                  <button onClick={handleTopup} className="flex-1 py-2 bg-primary text-white rounded-xl text-sm font-semibold">
+                    Top Up RM {topupAmount || '0'}
                   </button>
                 </div>
               </div>
@@ -236,10 +249,108 @@ export default function Wallet() {
         )}
       </AnimatePresence>
       
+      {/* Payout Modal */}
+      <AnimatePresence>
+        {showPayoutModal && (
+          <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowPayoutModal(false)}>
+            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} className="bg-white rounded-2xl max-w-md w-full shadow-2xl max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+              <div className="px-6 py-4 border-b flex justify-between items-center sticky top-0 bg-white">
+                <h3 className="font-bold text-primary">Pay Workers</h3>
+                <button onClick={() => setShowPayoutModal(false)}><X size={20} /></button>
+              </div>
+              <div className="p-6">
+                <div className="mb-4">
+                  <label className="block text-xs font-bold mb-2">Select Worker</label>
+                  {pendingWorkers.length === 0 ? (
+                    <div className="text-center py-6">
+                      <CheckCircle size={40} className="mx-auto text-green-500 mb-2" />
+                      <p className="text-sm text-on-surface-variant">No pending payments!</p>
+                      <p className="text-xs text-on-surface-variant mt-1">All workers have been paid.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3 max-h-64 overflow-y-auto">
+                      {pendingWorkers.map((worker) => (
+                        <div 
+                          key={worker.id}
+                          onClick={() => {
+                            setSelectedWorker(worker);
+                            setPayoutAmount(worker.amount?.toString() || '0');
+                          }}
+                          className={`flex items-center justify-between p-3 border rounded-xl cursor-pointer transition-all ${
+                            selectedWorker?.id === worker.id 
+                              ? 'border-primary bg-primary/5' 
+                              : 'border-outline-variant hover:border-primary/50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <img 
+                              src={worker.worker_avatar || 'https://randomuser.me/api/portraits/men/32.jpg'} 
+                              alt={worker.worker_name}
+                              className="w-10 h-10 rounded-full object-cover"
+                            />
+                            <div>
+                              <p className="font-semibold text-sm">{worker.worker_name}</p>
+                              <p className="text-xs text-on-surface-variant">{worker.gig_title}</p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-bold text-primary">RM {worker.amount || 0}</p>
+                            <span className="text-[10px] text-amber-600">Pending</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                
+                {selectedWorker && (
+                  <>
+                    <div className="mb-4 p-3 bg-gray-50 rounded-xl">
+                      <p className="text-xs text-on-surface-variant">Payment will be sent to:</p>
+                      <p className="font-semibold text-sm">{selectedWorker.worker_name}</p>
+                    </div>
+                    
+                    <div className="mb-4">
+                      <label className="block text-xs font-bold mb-2">Amount (RM)</label>
+                      <input 
+                        type="number" 
+                        value={payoutAmount} 
+                        onChange={(e) => setPayoutAmount(e.target.value)}
+                        className="w-full px-4 py-2 rounded-xl border text-sm font-semibold"
+                      />
+                      <div className="flex justify-between mt-1">
+                        <p className="text-xs text-on-surface-variant">Wallet balance: RM {walletBalance.toFixed(2)}</p>
+                        {parseFloat(payoutAmount) > walletBalance && (
+                          <p className="text-xs text-red-500 flex items-center gap-1">
+                            <AlertCircle size={10} /> Insufficient balance
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    
+                    <div className="flex gap-3">
+                      <button onClick={() => setShowPayoutModal(false)} className="flex-1 py-2 border rounded-xl text-sm font-medium">Cancel</button>
+                      <button 
+                        onClick={handleProcessPayment} 
+                        disabled={!selectedWorker || !payoutAmount || parseFloat(payoutAmount) > walletBalance}
+                        className="flex-1 py-2 bg-primary text-white rounded-xl text-sm font-semibold disabled:opacity-50"
+                      >
+                        Send Payment
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      
+      {/* Toast */}
       <AnimatePresence>
         {toastMessage && (
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}
-            className="fixed bottom-24 right-4 z-50 bg-slate-800 text-white px-4 py-2.5 rounded-xl shadow-lg text-sm">
+            className="fixed bottom-24 right-4 z-50 bg-slate-800 text-white px-4 py-2.5 rounded-xl shadow-lg text-sm max-w-xs">
             {toastMessage}
           </motion.div>
         )}
@@ -247,11 +358,3 @@ export default function Wallet() {
     </div>
   );
 }
-
-// Add X icon if not imported
-const X = ({ size, className }: { size?: number; className?: string }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" width={size || 24} height={size || 24} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-    <line x1="18" y1="6" x2="6" y2="18" />
-    <line x1="6" y1="6" x2="18" y2="18" />
-  </svg>
-);
