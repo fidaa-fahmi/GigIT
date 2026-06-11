@@ -101,54 +101,54 @@ export default function HiredWorkers() {
     setIsSubmitting(true);
     
     try {
-      // Send to AI for sentiment analysis
-      const prompt = `
-        Analyze this worker review: "${reviewText}"
-        Rating given: ${rating}/5
-        
-        Determine if the review sentiment matches the rating.
-        Return JSON: { "sentiment": "positive|neutral|negative", "adjusted_rating": number, "confidence": number }
-      `;
-      
       let aiAnalysis = { sentiment: 'positive', adjusted_rating: rating, confidence: 0.9 };
       
-      try {
-        const response = await ai.models.generateContent({
-          model: 'gemini-2.0-flash-exp',
-          contents: prompt,
-          config: { responseMimeType: "application/json" }
-        });
-        aiAnalysis = JSON.parse(response.text);
-      } catch (err) {
-        console.log('AI unavailable, using default');
+      if (reviewText.trim()) {
+        try {
+          const prompt = `
+            Analyze this worker review: "${reviewText}"
+            Rating given: ${rating}/5
+            
+            Determine if the review sentiment matches the rating.
+            Return JSON: { "sentiment": "positive|neutral|negative", "adjusted_rating": number, "confidence": number }
+          `;
+          
+          const response = await ai.models.generateContent({
+            model: 'gemini-1.5-flash',
+            contents: prompt,
+            config: { responseMimeType: "application/json" }
+          });
+          aiAnalysis = JSON.parse(response.text);
+        } catch (err) {
+          console.log('AI unavailable, using default');
+        }
       }
       
-      // Save review to database
-      const { error } = await supabase
-        .from('reviews')
+      // Save review
+      const { error: reviewError } = await supabase
+        .from('worker_reviews')  // Changed from 'reviews'
         .insert({
           worker_id: selectedWorker.worker_id,
           employer_id: user?.id,
           gig_id: selectedWorker.gig_id,
           rating: aiAnalysis.adjusted_rating,
-          comment: reviewText,
+          comment: reviewText || (rating >= 4 ? 'Good worker' : 'Satisfactory work'),
           sentiment: aiAnalysis.sentiment,
           created_at: new Date().toISOString()
         });
       
-      if (error) throw error;
+      if (reviewError) throw reviewError;
       
-      // Update worker status
-      await supabase
-        .from('hired_workers')
-        .update({ status: 'verified', rating_given: true })
-        .eq('id', selectedWorker.id);
+      // Update worker's reliability score
+      await supabase.rpc('update_worker_reliability', { 
+        worker_uuid: selectedWorker.worker_id 
+      });
       
       setToastMessage('✅ Review submitted! Worker reliability score updated.');
       setTimeout(() => setToastMessage(null), 4000);
       
       setShowReviewModal(false);
-      fetchHiredWorkers();
+      await fetchHiredWorkers();
       
     } catch (err) {
       console.error('Error submitting review:', err);

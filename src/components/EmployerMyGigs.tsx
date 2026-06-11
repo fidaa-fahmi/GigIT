@@ -58,6 +58,60 @@ export default function EmployerMyGigs({ onNavigate, onPostNewGig }: EmployerMyG
     }
   };
 
+  const seedDummyGigs = async () => {
+    if (myGigs.length === 0 && !loading) {
+      const dummyGigs = [
+        {
+          title: 'Weekend Barista',
+          employer: user?.user_metadata?.full_name?.split(' ')[0] || 'Employer',
+          employer_id: user?.id,
+          employer_name: user?.user_metadata?.full_name || 'Employer',
+          location_name: 'KK Town',
+          distance: '0.5km away',
+          rate: 'RM 12/hr',
+          period: 'Hour',
+          category: 'F&B',
+          is_instant: false,
+          duration: '6 Hours',
+          description: 'Looking for a friendly barista for weekend morning shifts. Training provided!',
+          tags: ['Barista', 'Weekend', 'Student Friendly'],
+          coords: { x: 58, y: 55, lat: 5.9749, lng: 116.0724 },
+          status: 'open',
+          created_at: new Date().toISOString()
+        },
+        {
+          title: 'Event Crew Needed',
+          employer: user?.user_metadata?.full_name?.split(' ')[0] || 'Employer',
+          employer_id: user?.id,
+          employer_name: user?.user_metadata?.full_name || 'Employer',
+          location_name: 'SICC',
+          distance: '1.2km away',
+          rate: 'RM 15/hr',
+          period: 'Hour',
+          category: 'Event',
+          is_instant: false,
+          duration: '8 Hours',
+          description: 'Need 2 crew members for upcoming tech expo. Setup and registration duties.',
+          tags: ['Event', 'Weekend', 'Immediate Start'],
+          coords: { x: 67, y: 35, lat: 6.0400, lng: 116.1200 },
+          status: 'open',
+          created_at: new Date().toISOString()
+        }
+      ];
+      
+      for (const gig of dummyGigs) {
+        await supabase.from('gigs').insert([gig]);
+      }
+      await fetchMyGigs();
+    }
+  };
+
+  // Call it in useEffect
+  useEffect(() => {
+    if (user) {
+      fetchMyGigs().then(() => seedDummyGigs());
+    }
+  }, [user]);
   const fetchApplicantsCounts = async (gigs: Gig[]) => {
     const counts: Record<string, number> = {};
     for (const gig of gigs) {
@@ -95,35 +149,31 @@ export default function EmployerMyGigs({ onNavigate, onPostNewGig }: EmployerMyG
 
   const updateGigStatus = async (gigId: string, newStatus: 'open' | 'closed') => {
     try {
-        const { error } = await supabase
+      setToastMessage(`Updating gig status...`);
+      
+      const { error } = await supabase
         .from('gigs')
-        .update({ status: newStatus, updated_at: new Date().toISOString() })
+        .update({ 
+          status: newStatus, 
+          updated_at: new Date().toISOString() 
+        })
         .eq('id', gigId);
-        
-        if (error) throw error;
-        
-        setMyGigs(prev => prev.map(gig => 
+      
+      if (error) throw error;
+      
+      // Update local state immediately
+      setMyGigs(prev => prev.map(gig => 
         gig.id === gigId ? { ...gig, status: newStatus } : gig
-        ));
-        setToastMessage(`✅ Gig ${newStatus === 'open' ? 'opened' : 'closed'} successfully!`);
-        setTimeout(() => setToastMessage(null), 3000);
+      ));
+      
+      setToastMessage(`✅ Gig ${newStatus === 'open' ? 'opened' : 'closed'} successfully!`);
+      setTimeout(() => setToastMessage(null), 3000);
+      
+      // Refresh to ensure consistency
+      await fetchMyGigs();
     } catch (err) {
-        console.error('Error updating gig status:', err);
-        setToastMessage('❌ Failed to update gig status. Please try again.');
-        setTimeout(() => setToastMessage(null), 3000);
-    }
-    };
-
-  const deleteGig = async (gigId: string) => {
-    const { error } = await supabase
-      .from('gigs')
-      .delete()
-      .eq('id', gigId);
-    
-    if (!error) {
-      setMyGigs(prev => prev.filter(gig => gig.id !== gigId));
-      setShowDeleteConfirm(null);
-      setToastMessage('Gig deleted successfully!');
+      console.error('Error updating gig status:', err);
+      setToastMessage('❌ Failed to update gig status. Please try again.');
       setTimeout(() => setToastMessage(null), 3000);
     }
   };
@@ -183,40 +233,23 @@ export default function EmployerMyGigs({ onNavigate, onPostNewGig }: EmployerMyG
         {/* Filters */}
         <div className="flex flex-col sm:flex-row justify-between gap-4 mb-6">
           <div className="flex gap-2">
-            <button
-              onClick={() => setStatusFilter('all')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                statusFilter === 'all' ? 'bg-primary text-white' : 'bg-white border border-outline-variant'
-              }`}
-            >
-              All Gigs
-            </button>
-            <button
-              onClick={() => setStatusFilter('open')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                statusFilter === 'open' ? 'bg-primary text-white' : 'bg-white border border-outline-variant'
-              }`}
-            >
-              Active
-            </button>
-            <button
-              onClick={() => setStatusFilter('closed')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                statusFilter === 'closed' ? 'bg-primary text-white' : 'bg-white border border-outline-variant'
-              }`}
-            >
-              Closed
-            </button>
+            <button onClick={() => setStatusFilter('all')} className={`px-4 py-2 rounded-lg text-sm font-medium ${statusFilter === 'all' ? 'bg-primary text-white' : 'bg-white border'}`}>All Gigs</button>
+            <button onClick={() => setStatusFilter('open')} className={`px-4 py-2 rounded-lg text-sm font-medium ${statusFilter === 'open' ? 'bg-primary text-white' : 'bg-white border'}`}>Active</button>
+            <button onClick={() => setStatusFilter('closed')} className={`px-4 py-2 rounded-lg text-sm font-medium ${statusFilter === 'closed' ? 'bg-primary text-white' : 'bg-white border'}`}>Closed</button>
           </div>
-          <div className="relative">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
-            <input
-              type="text"
-              placeholder="Search by title or location..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9 pr-4 py-2 rounded-lg border border-outline-variant text-sm w-64 focus:outline-primary"
-            />
+          <div className="flex gap-2">
+            <div className="relative">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
+              <input type="text" placeholder="Search by title or location..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-9 pr-4 py-2 rounded-lg border border-outline-variant text-sm w-64 focus:outline-primary" />
+            </div>
+            <button 
+              onClick={fetchMyGigs} 
+              className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+              title="Refresh"
+            >
+              🔄
+            </button>
           </div>
         </div>
 

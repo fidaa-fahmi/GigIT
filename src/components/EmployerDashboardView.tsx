@@ -1,4 +1,5 @@
 // EmployerDashboardView.tsx - Complete fixed version
+// EmployerDashboardView.tsx - Correct imports (no duplicates)
 import React, { useState, useEffect } from 'react';
 import { AppView, Gig, Applicant } from '../types';
 import { initialApplicants, initialBackupWorkers } from '../data';
@@ -8,6 +9,8 @@ import BackupPoolWidget from './BackupPoolWidget';
 import EmployerMyGigs from './EmployerMyGigs';
 import HiredWorkers from './HiredWorkers';
 import WorkerProfileModal from './WorkerProfileModal';
+import EmployerSettings from './EmployerSettings';  // Add this once
+import Wallet from './Wallet';  // Add this once
 import { 
   Bell, Plus, Star, Check, MapPin, Shield, TrendingUp, Eye, 
   Briefcase, Users, CreditCard, Settings, LogOut, X, Send, 
@@ -91,7 +94,8 @@ export default function EmployerDashboardView({ onNavigate, gigs, onAddGig, onLo
   // State
   const [selectedWorkerProfile, setSelectedWorkerProfile] = useState<any>(null);
   const [showWorkerProfile, setShowWorkerProfile] = useState(false);
-  const [currentSubView, setCurrentSubView] = useState<'dashboard' | 'mygigs' | 'hired'>('dashboard');  const [selectedGigForBackup, setSelectedGigForBackup] = useState<Gig | null>(null);
+  const [currentSubView, setCurrentSubView] = useState<'dashboard' | 'mygigs' | 'hired' | 'settings' | 'wallet'>('dashboard'); 
+  const [selectedGigForBackup, setSelectedGigForBackup] = useState<Gig | null>(null);
   const [showBackupPool, setShowBackupPool] = useState(false);
   const [applicants, setApplicants] = useState<Applicant[]>([]);
   const [loading, setLoading] = useState(true);
@@ -183,6 +187,23 @@ export default function EmployerDashboardView({ onNavigate, gigs, onAddGig, onLo
       fetchMyGigs();
       fetchAllApplicants();
     }
+  }, [user]);
+  useEffect(() => {
+    // Subscribe to real-time gig changes
+    const channel = supabase
+      .channel('gig_changes')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'gigs', filter: `employer_id=eq.${user?.id}` },
+        () => {
+          fetchMyGigs();
+          fetchAllApplicants();
+        }
+      )
+      .subscribe();
+    
+    return () => {
+      channel.unsubscribe();
+    };
   }, [user]);
 
   const fetchMyGigs = async () => {
@@ -285,26 +306,33 @@ export default function EmployerDashboardView({ onNavigate, gigs, onAddGig, onLo
 
   // AI Candidate Ranking
   const rankCandidatesWithAI = async () => {
-    if (applicants.length === 0) return;
+    if (applicants.length === 0) {
+      setShowSuccessToast('No applicants to rank');
+      setTimeout(() => setShowSuccessToast(null), 2000);
+      return;
+    }
     
     setIsAiRanking(true);
     try {
       const prompt = `
-        You are an AI hiring assistant for GigIT. Rank these candidates for a gig.
+        You are an AI hiring assistant for GigIT. Rank these candidates based on their suitability.
         
         Candidates: ${JSON.stringify(applicants.map(a => ({
+          id: a.id,
           name: a.name,
           rating: a.rating,
           badge: a.badge,
-          bio: a.bio
+          bio: a.bio,
+          noShowRate: a.noShowRate
         })))}
         
         Return a JSON array with objects: { "applicantId": "string", "score": number (0-100), "reason": "string" }
         Sort by highest score first.
+        Higher rating and lower no-show rate = better score.
       `;
       
       const response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash-exp',
+        model: 'gemini-2.5-flash',  // Changed from 'gemini-2.0-flash-exp'
         contents: prompt,
         config: { responseMimeType: "application/json" }
       });
@@ -315,7 +343,17 @@ export default function EmployerDashboardView({ onNavigate, gigs, onAddGig, onLo
       setTimeout(() => setShowSuccessToast(null), 3000);
     } catch (err) {
       console.error('AI ranking failed:', err);
-      setShowSuccessToast('AI ranking temporarily unavailable');
+      // Fallback: sort by rating
+      const fallbackRankings = [...applicants]
+        .sort((a, b) => b.rating - a.rating)
+        .map((a, index) => ({
+          applicantId: a.id,
+          score: Math.round(100 - (index * 10)),
+          reason: `Based on ${a.rating}⭐ rating and ${a.badge} status`
+        }));
+      setAiRanking(fallbackRankings);
+      setShowSuccessToast('AI temporarily unavailable. Showing rating-based ranking.');
+      setTimeout(() => setShowSuccessToast(null), 3000);
     } finally {
       setIsAiRanking(false);
     }
@@ -395,15 +433,46 @@ export default function EmployerDashboardView({ onNavigate, gigs, onAddGig, onLo
       setShowPostModal(false);
       setShowSuccessToast(`✅ "${formData.title}" has been posted!`);
       resetToDefault();
+      
+      // Refresh all data
       await fetchMyGigs();
-      setTimeout(() => setShowSuccessToast(null), 4000);
+      await fetchAllApplicants();
+      
+      // Also refresh the gigs list in the parent component
+      setTimeout(() => {
+        setShowSuccessToast(null);
+      }, 4000);
     } catch (err: any) {
       console.error('Failed to post gig:', err);
       setShowSuccessToast(`❌ Failed: ${err.message}`);
       setTimeout(() => setShowSuccessToast(null), 5000);
     }
   };
-
+  //handle reject
+  const handleReject = async (applicant: any, reason: string) => {
+    try {
+      // Update applicant status in database
+      const { error } = await supabase
+        .from('applicants')
+        .update({ 
+          status: 'Rejected', 
+          rejected_reason: reason,
+          rejected_at: new Date().toISOString()
+        })
+        .eq('id', applicant.id);
+      
+      if (error) throw error;
+      
+      // Remove from local state
+      setApplicants(prev => prev.filter(a => a.id !== applicant.id));
+      setShowSuccessToast(`Rejected ${applicant.name} - Reason: ${reason}`);
+      setTimeout(() => setShowSuccessToast(null), 3000);
+    } catch (err) {
+      console.error('Error rejecting applicant:', err);
+      setShowSuccessToast('Failed to reject applicant. Please try again.');
+      setTimeout(() => setShowSuccessToast(null), 3000);
+    }
+  };
   // Filter and sort applicants
   const filteredApplicants = applicants
     .filter(a => statusFilter === 'all' || a.status === statusFilter)
@@ -496,6 +565,28 @@ export default function EmployerDashboardView({ onNavigate, gigs, onAddGig, onLo
             >
               <Users size={18} />
               <span className="text-sm">Hired Workers</span>
+            </button>
+            <button 
+              onClick={() => setCurrentSubView('settings')} 
+              className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all ${
+                currentSubView === 'settings' 
+                  ? 'bg-primary-container text-on-primary-container font-bold' 
+                  : 'text-on-surface-variant hover:bg-surface-container-low'
+              }`}
+            >
+              <Settings size={18} />
+              <span className="text-sm">Settings</span>
+            </button>
+            <button 
+              onClick={() => setCurrentSubView('wallet')} 
+              className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all ${
+                currentSubView === 'wallet' 
+                  ? 'bg-primary-container text-on-primary-container font-bold' 
+                  : 'text-on-surface-variant hover:bg-surface-container-low'
+              }`}
+            >
+              <CreditCard size={18} />
+              <span className="text-sm">Wallet</span>
             </button>
           </nav>
 
@@ -684,6 +775,8 @@ export default function EmployerDashboardView({ onNavigate, gigs, onAddGig, onLo
           {currentSubView === 'hired' && (
             <HiredWorkers />
           )}
+          {currentSubView === 'settings' && <EmployerSettings />}
+          {currentSubView === 'wallet' && <Wallet />}
         </main>
       </div>
 

@@ -61,7 +61,7 @@ ${reviews.map(r => `Rating ${r.rating}/5: "${r.comment}"`).join('\n')}
 Return ONLY a JSON object: { "summary": "string", "strengths": ["string"], "weaknesses": ["string"] }`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash-exp',
+        model: 'gemini-1.5-flash',
         contents: prompt,
         config: { responseMimeType: "application/json" }
       });

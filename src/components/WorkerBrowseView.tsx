@@ -231,38 +231,20 @@ export default function WorkerBrowseView({
 
           {/* Clock-in widget */}
           <div className="px-6 mt-auto pb-4">
-            <div className="bg-surface-container p-4 rounded-xl mb-4 border border-outline-variant/60">
-              <p className="text-xs font-bold text-on-surface mb-1 flex items-center gap-1.5 uppercase tracking-wide">
-                <Clock size={12} className="text-primary animate-pulse" />Next Shift
-              </p>
-              <p className="text-xs text-on-surface-variant mb-0.5">Today, 2:00 PM</p>
-              <p className="text-xs font-bold text-primary mb-3">Event Helper @ UMS</p>
-
-              {clockInState === 'idle' && (
-                <button onClick={handleClockIn} className="w-full bg-primary hover:bg-primary/95 text-white py-2 rounded-lg text-xs font-bold active:scale-95 transition-all flex items-center justify-center gap-1 cursor-pointer">
-                  <Play size={10} fill="currentColor" /><span>Clock In</span>
-                </button>
-              )}
-              {clockInState === 'clocked-in' && (
-                <button onClick={handleClockIn} className="w-full bg-red-600 hover:bg-red-700 text-white py-2 rounded-lg text-xs font-bold active:scale-95 transition-all text-center cursor-pointer shadow-sm animate-pulse-slow">
-                  Clock Out (Active {clockInTime})
-                </button>
-              )}
-              {clockInState === 'clocked-out' && (
-                <div className="text-center py-2 bg-tertiary/15 border border-tertiary/30 text-tertiary rounded-lg text-xs font-bold flex items-center justify-center gap-1">
-                  <CheckCircle size={14} /><span>Shift Completed!</span>
-                </div>
-              )}
-            </div>
-
-            <div className="flex flex-col gap-0.5">
-              <a href="#" onClick={e => e.preventDefault()} className="flex items-center gap-3 py-1.5 text-on-surface-variant hover:text-primary transition-colors text-xs font-medium">
-                <span className="material-symbols-outlined text-md">settings</span><span>Settings</span>
-              </a>
-              <a href="#" onClick={e => { e.preventDefault(); onNavigate(AppView.Landing); }} className="flex items-center gap-3 py-1.5 text-on-surface-variant hover:text-error transition-colors text-xs font-medium">
-                <span className="material-symbols-outlined text-md">logout</span><span>Logout</span>
-              </a>
-            </div>
+            <ClockInOut 
+              gigTitle="Event Helper @ UMS"
+              gigLocation="UMS Campus"
+              onClockIn={(time) => {
+                console.log('Clocked in at:', time);
+                setToastMessage(`Clocked in at ${time.toLocaleTimeString()}! Have a great shift! 🎉`);
+                setTimeout(() => setToastMessage(null), 3000);
+              }}
+              onClockOut={(time, duration) => {
+                console.log('Clocked out at:', time, 'Duration:', duration.toFixed(2), 'hours');
+                setToastMessage(`Clocked out! Shift duration: ${duration.toFixed(2)} hours. Payment processed. 💸`);
+                setTimeout(() => setToastMessage(null), 5000);
+              }}
+            />
           </div>
         </aside>
 
